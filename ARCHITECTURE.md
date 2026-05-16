@@ -298,7 +298,7 @@ Response:
       "price": 15999,
       "startDate": "2026-06-12",
       "endDate": "2026-06-18",
-      "imageUrl": "./assets/lake.JPG"
+      "imageUrl": "./assets/lake.jpg"
     }
   ]
 }

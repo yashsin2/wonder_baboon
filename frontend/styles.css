@@ -1458,7 +1458,7 @@ a.btn {
   text-decoration: none;
 }
 .hero {
-  background: url('./assets/lake.JPG') center/cover no-repeat;
+  background: url('./assets/lake.jpg') center/cover no-repeat;
   color: white;
   text-align: center;
   padding: 80px 20px;
@@ -1750,7 +1750,7 @@ a.btn {
 .hero {
   position: relative;
   height: 100vh;
-  background: url('./assets/lake.JPG') no-repeat center center/cover;
+  background: url('./assets/lake.jpg') no-repeat center center/cover;
   display: flex;
   flex-direction: column;
   justify-content: center;

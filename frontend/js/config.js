@@ -1,9 +1,13 @@
 const ENV_API_BASE = window.__WB_API_BASE__;
+const SERVER_HOSTS = new Set(["localhost", "72.60.200.102", ""]);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", ""]);
 function resolveApiBase() {
     if (ENV_API_BASE)
         return ENV_API_BASE.replace(/\/$/, "");
     const { protocol, hostname } = window.location;
+    if (SERVER_HOSTS.has(hostname)) {
+        return "http://api.wonderbaboon.com/api";
+    }
     if (LOCAL_HOSTS.has(hostname)) {
         return "http://localhost:5051/api";
     }
