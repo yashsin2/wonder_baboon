@@ -1,0 +1,15 @@
+[Unit]
+Description=Wonder Baboon API (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/wonder-baboon/backend
+EnvironmentFile=/var/www/wonder-baboon/.env
+ExecStart=/var/www/wonder-baboon/.venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 5051
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

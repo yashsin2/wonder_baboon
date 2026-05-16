@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <meta charset="UTF-8">
+  
+  <title>Wonder Baboon</title>
+  <link rel="stylesheet" href="./styles.css?v=prevtravel-simple1">
+  <!-- Swiper CSS -->
+<link
+rel="stylesheet"
+href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
+/>
+<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Gloria+Hallelujah&display=swap" rel="stylesheet">
+
+
+
+</head>
+<body data-page="home">
+  
+
+  <!-- Swiper JS -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+  <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+
+  <header class="site-header">
+  <div class="header-container">
+    <a class="logo" href="./index.html">
+      <img src="./assets/logo.png" alt="Wonder Baboon Logo">
+      <div class="logo-text-block">
+        <span class="logo-text">Wonder Baboon</span>
+        <span class="logo-greeting" id="logoGreeting"></span>
+      </div>
+    </a>
+
+    <nav class="nav-links" data-smooth-scroll>
+      <a href="#trips">Upcoming Trips</a>
+      <a href="#gallery">Previous Travels</a>
+      <a href="#about">About Us</a>
+      <a href="#travel-style">Travel Styles</a>
+    </nav>
+
+    <div class="header-right">
+      <div class="search-bar">
+        <input id="headerTripSearch" type="search" placeholder="Search trips by name or place…" autocomplete="off">
+        <button type="button" id="headerTripSearchBtn" aria-label="Search trips">🔍</button>
+      </div>
+      <a class="phone" href="tel:+919151584677">📞 +91 91515 84677</a>
+    </div>
+  </div>
+</header>
+
+<aside class="user-panel" id="userPanel" aria-hidden="true">
+  <div class="user-panel-overlay" data-panel-close></div>
+  <div class="user-panel-drawer" role="dialog" aria-label="Wonder Baboon menu">
+    <header class="user-panel-head">
+      <button class="user-panel-close" data-panel-close aria-label="Close panel">&times;</button>
+      <div class="up-head-row">
+        <div class="up-avatar" id="panelAvatar" aria-hidden="true"><img src="./assets/logo.png" alt="Wonder Baboon" /></div>
+        <div class="up-head-text">
+          <h3 id="panelTitle">Wonder Baboon</h3>
+          <p id="panelGreeting" class="up-greeting">Welcome, traveler</p>
+        </div>
+      </div>
+    </header>
+
+    <nav class="up-nav" data-panel-nav>
+      <a class="up-nav-item" href="./index.html" data-page="home">
+        <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H10v6H4a1 1 0 0 1-1-1v-8.5z"/></svg></span>
+        <span>Home</span>
+      </a>
+      <a class="up-nav-item" href="./upcoming-trips.html" data-page="upcoming">
+        <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+        <span>Your trips</span>
+      </a>
+      <a class="up-nav-item" href="./previous-trips.html" data-page="previous">
+        <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
+        <span>Previous Trips</span>
+      </a>
+      <a class="up-nav-item" href="./settings.html" data-page="settings">
+        <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.15.68.4.95.71"/></svg></span>
+        <span>Settings</span>
+      </a>
+    </nav>
+
+    <footer class="user-panel-foot" id="userPanelFoot">
+      <a href="./auth.html" class="up-footer-btn up-login-btn" id="panelLoginBtn">Login / Sign up</a>
+    </footer>
+  </div>
+</aside>
+
+<span id="authNavLinks" hidden></span>
+
+
+
+
+        <!-- Hero Section -->
+        <div class="hero">
+            <div class="hero-content">
+                <h1>Trips from just ₹999 per day</h1>
+                <br>
+                <br>
+                <a href="#tours" class="cta-btn">Let's Go</a>
+            </div>
+
+            <div class="search-box">
+                <input id="planDestination" type="text" placeholder="Where do you want to go?">
+                <select id="heroTravelStyle" class="travel-style-select">
+                    <option value="">Travel Style</option>
+                    <option value="adventure">Adventure & Trekking</option>
+                    <option value="cultural">Cultural & Heritage</option>
+                    <option value="spiritual">Spiritual & Wellness</option>
+                    <option value="wildlife">Wildlife & Nature</option>
+                    <option value="luxury">Luxury & Comfort</option>
+                    <option value="budget">Budget & Backpacking</option>
+                </select>
+                <input id="planDate" type="date" placeholder="When do you want to go?">
+                <button id="planTripBtn" type="button">Search trips</button>
+            </div>
+        </div>
+
+<!-- Storybook landscape divider between hero and Upcoming Trips -->
+<div class="boundary-scene" aria-hidden="true">
+  <img class="boundary-bg" src="./assets/border-scene.png" alt="">
+</div>
+
+<section class="trips" id="trips">
+  <h2 class="section-title">✨ Upcoming Trips ✨</h2>
+  <p class="section-subtitle">Published adventures from our trip catalog</p>
+  <div class="trips-carousel">
+    <div class="swiper tripsSwiper">
+      <div class="swiper-wrapper" id="tripsContainer"></div>
+    </div>
+    <button type="button" class="trips-arrow prev" id="tripsPrev" aria-label="Previous"><span>&#10094;</span></button>
+    <button type="button" class="trips-arrow next" id="tripsNext" aria-label="Next"><span>&#10095;</span></button>
+    <div class="swiper-pagination trips-pagination"></div>
+  </div>
+</section>
+<section class="gallery gallery--previous-simple" id="gallery">
+  <h2 class="gallery-title">Previous Travels</h2>
+
+  <div class="previous-travels-inner">
+    <div class="swiper previousTravelsSwiper">
+      <div class="swiper-wrapper">
+        <div class="swiper-slide"><img src="./assets/lake.JPG" alt="Lake"></div>
+        <div class="swiper-slide"><img src="./assets/monastery.jpg" alt="Monastery"></div>
+        <div class="swiper-slide"><img src="./assets/banaras.jpg" alt="Banaras"></div>
+        <div class="swiper-slide"><img src="./assets/rishikesh1.jpg" alt="Rishikesh"></div>
+        <div class="swiper-slide"><img src="./assets/rishikesh2.jpg" alt="Rishikesh streets"></div>
+        <div class="swiper-slide"><img src="./assets/nagtibba1.JPG" alt="Nagtibba Trek"></div>
+        <div class="swiper-slide"><img src="./assets/nagtibba2.JPG" alt="Nagtibba Views"></div>
+        <div class="swiper-slide"><img src="./assets/nagtibba3.JPG" alt="Nagtibba Camping"></div>
+        <div class="swiper-slide"><img src="./assets/nagtibba4.JPG" alt="Nagtibba Summit"></div>
+      </div>
+      <div class="swiper-pagination previous-travels-dots"></div>
+    </div>
+    <script>
+      (function () {
+        if (typeof Swiper === "undefined") return;
+        new Swiper(".previousTravelsSwiper", {
+          slidesPerView: 3,
+          slidesPerGroup: 3,
+          spaceBetween: 22,
+          speed: 0,
+          loop: false,
+          allowTouchMove: true,
+          autoplay: false,
+          pagination: {
+            el: ".previous-travels-dots",
+            clickable: true,
+          },
+          breakpoints: {
+            0: {
+              slidesPerView: 1,
+              slidesPerGroup: 1,
+              spaceBetween: 16,
+            },
+            560: {
+              slidesPerView: 2,
+              slidesPerGroup: 2,
+              spaceBetween: 18,
+            },
+            900: {
+              slidesPerView: 3,
+              slidesPerGroup: 3,
+              spaceBetween: 22,
+            },
+          },
+        });
+      })();
+    </script>
+  </div>
+</section>
+<!-- About Us Section -->
+<section class="about-us" id="about">
+  <div class="about-container">
+    <div class="about-text">
+      <h2>About Us</h2>
+      <p>
+        At <strong>Wonder Baboon</strong>, we believe travel is more than just visiting places — 
+        it’s about experiencing cultures, meeting people, and creating stories that last forever.  
+        From backpacking adventures to offbeat escapes, we design journeys that inspire you to 
+        wander and explore the world in a natural, earthy way.
+      </p>
+      <p>
+        Whether you’re a solo traveler, a group of friends, or someone looking for a soulful escape,
+        we’ve got something unique for you. 🌍✨
+      </p>
+    </div>
+    <div class="about-image">
+      <img src="./assets/monastery.jpg" alt="About Wonder Baboon">
+    </div>
+  </div>
+</section>
+<!-- Travel Style Section -->
+<section class="travel-style" id="travel-style">
+  <div class="travel-style-content">
+    <h2>✨ Our Travel Style ✨</h2>
+    <blockquote>
+      "The freedom and simple beauty is too good to pass up."  
+      <span>– Christopher McCandless</span>
+    </blockquote>
+    <p>
+      At <strong>Wonder Baboon</strong>, we embrace the true spirit of a backpacker — 
+      <em>traveling light, chasing sunsets instead of souvenirs, and choosing the road over routine.</em>  
+      Our journeys are about connection — with people, with places, and with the wild beauty of the world.  
+    </p>
+    <p>
+      These trips are crafted for wanderers who believe that stories matter more than schedules, and experiences matter more than things. 🌍✨
+    </p>
+    <a href="#trips" class="btn">Explore Trips</a>
+  </div>
+  
+  <!-- Get Inspired Section -->
+  <div class="inspired-content">
+    <h2>🌿 Get Inspired 🌿</h2>
+    <img src="./assets/oldman.jpg" alt="Wanderer" class="inspired-img" />
+    <p>
+      Somewhere between the sacred waters of <strong>Rishikesh</strong> and the icy silence of <strong>Gangotri</strong>, 
+      he walked every step — not for glory, not for records, but to <em>discover himself</em>.  
+    </p>
+    <p>
+      A lifetime spent meeting people, listening to stories, and now… he finds his teachers in the 
+      <strong>mountains, rivers, and trees</strong>.  
+    </p>
+    <p>
+      Before leaving this world, his only wish is simple — to understand life a little deeper.  
+      To remind us that <strong>travel isn't about distance, it's about depth</strong>.  ```
+    </p>
+    <blockquote>
+      "The journey is not to escape life, but to let life not escape you."
+    </blockquote>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-content">
+    <div class="footer-section">
+      <h4>Quick Links</h4>
+      <a href="#trips">Upcoming Trips</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#about">About Us</a>
+    </div>
+    <div class="footer-section">
+      <h4>Contact Info</h4>
+      <p>📞 +91 91515 84677</p>
+      <p>📧 baboonwonder@gmail.com</p>
+      <p>📍 Rishikesh, Uttarakhand</p>
+    </div>
+    <div class="footer-section">
+      <h4>Follow Us</h4>
+      <div class="social-links">
+        <a href="#" class="social-link">📘</a>
+        <a href="#" class="social-link">📷</a>
+        <a href="#" class="social-link">🐦</a>
+      </div>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    © 2025 Wonder Baboon | <a href="#" data-book style="color:#fff;">Book Now</a>
+  </div>
+</footer>
+
+<script type="module" src="./js/script.js?v=headerRevert1"></script>
+<script type="module" src="./js/user-panel.js?v=fullscreen1"></script>
+</body>
+</html>

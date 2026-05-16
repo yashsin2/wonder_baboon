@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Previous Trips · Wonder Baboon</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Outfit:wght@500;600;700&family=Permanent+Marker&display=swap" rel="stylesheet" />
+</head>
+<body data-page="previous">
+  <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+
+  <header class="site-header simple-header">
+    <div class="header-container">
+      <a class="logo" href="./index.html">
+        <img src="./assets/logo.png" alt="Wonder Baboon" />
+        <div class="logo-text-block">
+          <span class="logo-text">Previous travel</span>
+          <span class="logo-greeting" id="logoGreeting"></span>
+        </div>
+      </a>
+      <a class="header-home-link" href="./index.html">← Home</a>
+    </div>
+  </header>
+
+  <main class="route-page">
+    <div class="route-page-hero-bg" aria-hidden="true">
+      <img
+        class="route-page-hero-img"
+        src="./assets/couple-bus-sunset.jpg"
+        alt=""
+        width="2400"
+        height="1350"
+        decoding="async"
+      />
+      <div class="route-page-hero-scrim"></div>
+    </div>
+    <div class="route-page-inner">
+      <div id="previousList" class="route-list"></div>
+    </div>
+  </main>
+
+  <aside class="user-panel" id="userPanel" aria-hidden="true">
+    <div class="user-panel-overlay" data-panel-close></div>
+    <div class="user-panel-drawer" role="dialog" aria-label="Wonder Baboon menu">
+      <header class="user-panel-head">
+        <button class="user-panel-close" data-panel-close aria-label="Close panel">&times;</button>
+        <div class="up-head-row">
+          <div class="up-avatar" id="panelAvatar" aria-hidden="true"><img src="./assets/logo.png" alt="Wonder Baboon" /></div>
+          <div class="up-head-text">
+            <h3 id="panelTitle">Wonder Baboon</h3>
+            <p id="panelGreeting" class="up-greeting">Welcome, traveler</p>
+          </div>
+        </div>
+      </header>
+      <nav class="up-nav" data-panel-nav>
+        <a class="up-nav-item" href="./index.html" data-page="home"><span class="up-icon">🏠</span> Home</a>
+        <a class="up-nav-item" href="./upcoming-trips.html" data-page="upcoming"><span class="up-icon">📅</span> Your trips</a>
+        <a class="up-nav-item" href="./previous-trips.html" data-page="previous"><span class="up-icon">🗺️</span> Previous Trips</a>
+        <a class="up-nav-item" href="./settings.html" data-page="settings"><span class="up-icon">⚙️</span> Settings</a>
+      </nav>
+      <footer class="user-panel-foot" id="userPanelFoot">
+        <a href="./auth.html" class="up-footer-btn up-login-btn">Login / Sign up</a>
+      </footer>
+    </div>
+  </aside>
+
+  <script type="module" src="./js/route-page.js"></script>
+  <script type="module" src="./js/user-panel.js"></script>
+</body>
+</html>

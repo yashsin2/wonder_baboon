@@ -1,0 +1,179 @@
+import re
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+from auth_utils import sanitize_text
+
+
+class UserSignupRequest(BaseModel):
+  name: str = Field(min_length=2, max_length=60)
+  email: EmailStr
+  mobile: str = Field(min_length=10, max_length=15)
+  password: str = Field(min_length=8, max_length=72)
+
+  @field_validator("name")
+  @classmethod
+  def validate_name(cls, value: str) -> str:
+    cleaned = sanitize_text(value, "name")
+    if not re.fullmatch(r"[A-Za-z ]+", cleaned):
+      raise ValueError("name must have letters and spaces only")
+    return cleaned
+
+  @field_validator("mobile")
+  @classmethod
+  def validate_mobile(cls, value: str) -> str:
+    mobile = value.strip()
+    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
+      raise ValueError("invalid mobile number")
+    return mobile
+
+  @field_validator("password")
+  @classmethod
+  def validate_password(cls, value: str) -> str:
+    if not (re.search(r"[A-Z]", value) and re.search(r"[a-z]", value) and re.search(r"\d", value)):
+      raise ValueError("password must include uppercase lowercase number")
+    return value
+
+
+class UnifiedLoginRequest(BaseModel):
+  identifier: str = Field(min_length=3, max_length=120)
+  password: str = Field(min_length=8, max_length=72)
+
+  @field_validator("identifier")
+  @classmethod
+  def validate_identifier(cls, value: str) -> str:
+    return value.strip()
+
+
+class GuestBookingRequest(BaseModel):
+  trip_id: str = Field(min_length=2)
+  travel_destination: str = Field(min_length=3, max_length=120)
+  date_of_travel: str
+  full_name: str = Field(min_length=2, max_length=60)
+  mobile: str = Field(min_length=10, max_length=15)
+  email: Optional[EmailStr] = None
+  number_of_people: int = Field(ge=1, le=20, default=1)
+
+  @field_validator("trip_id", "travel_destination", "full_name")
+  @classmethod
+  def validate_text_fields(cls, value: str) -> str:
+    return sanitize_text(value)
+
+  @field_validator("mobile")
+  @classmethod
+  def validate_mobile(cls, value: str) -> str:
+    mobile = value.strip()
+    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
+      raise ValueError("invalid mobile number")
+    return mobile
+
+  @field_validator("date_of_travel")
+  @classmethod
+  def validate_date(cls, value: str) -> str:
+    trip_date = datetime.strptime(value, "%Y-%m-%d").date()
+    if trip_date < datetime.now().date():
+      raise ValueError("date of travel cannot be in the past")
+    return value
+
+
+class PlannedTripRequest(BaseModel):
+  travel_destination: str = Field(min_length=3, max_length=120)
+  date_of_travel: str
+  full_name: str = Field(min_length=2, max_length=60)
+  mobile: str = Field(min_length=10, max_length=15)
+  email: Optional[EmailStr] = None
+  number_of_people: int = Field(ge=1, le=20, default=1)
+
+  @field_validator("travel_destination", "full_name")
+  @classmethod
+  def validate_text_fields(cls, value: str) -> str:
+    return sanitize_text(value)
+
+  @field_validator("mobile")
+  @classmethod
+  def validate_mobile(cls, value: str) -> str:
+    mobile = value.strip()
+    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
+      raise ValueError("invalid mobile number")
+    return mobile
+
+  @field_validator("date_of_travel")
+  @classmethod
+  def validate_date(cls, value: str) -> str:
+    trip_date = datetime.strptime(value, "%Y-%m-%d").date()
+    if trip_date < datetime.now().date():
+      raise ValueError("date of travel cannot be in the past")
+    return value
+
+
+class ProfileNameUpdateRequest(BaseModel):
+  name: str = Field(min_length=2, max_length=60)
+
+  @field_validator("name")
+  @classmethod
+  def validate_name(cls, value: str) -> str:
+    cleaned = sanitize_text(value, "name")
+    if not re.fullmatch(r"[A-Za-z ]+", cleaned):
+      raise ValueError("name must have letters and spaces only")
+    return cleaned
+
+
+class EmailOtpRequest(BaseModel):
+  new_email: EmailStr
+
+
+class MobileOtpRequest(BaseModel):
+  new_mobile: str = Field(min_length=10, max_length=15)
+
+  @field_validator("new_mobile")
+  @classmethod
+  def validate_mobile(cls, value: str) -> str:
+    mobile = value.strip()
+    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
+      raise ValueError("invalid mobile number")
+    return mobile
+
+
+class OtpVerifyRequest(BaseModel):
+  code: str = Field(min_length=4, max_length=10)
+
+  @field_validator("code")
+  @classmethod
+  def validate_code(cls, value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned.isdigit():
+      raise ValueError("code must be digits")
+    return cleaned
+
+
+class AdminConfirmBookingRequest(BaseModel):
+  booking_id: str = Field(min_length=1, max_length=64)
+
+  @field_validator("booking_id")
+  @classmethod
+  def strip_booking_id(cls, value: str) -> str:
+    return value.strip()
+
+
+class AdminTripCreateRequest(BaseModel):
+  title: str = Field(min_length=3, max_length=120)
+  location: str = Field(min_length=2, max_length=80)
+  duration_label: str = Field(min_length=2, max_length=30)
+  price: int = Field(ge=0, le=200000)
+  start_date: str
+  end_date: str
+  image_name: str = Field(min_length=3, max_length=120)
+  published: bool = True
+
+  @field_validator("title", "location", "duration_label", "image_name")
+  @classmethod
+  def validate_text_fields(cls, value: str) -> str:
+    return sanitize_text(value)
+
+  @field_validator("start_date", "end_date")
+  @classmethod
+  def validate_date(cls, value: str) -> str:
+    datetime.strptime(value, "%Y-%m-%d")
+    return value

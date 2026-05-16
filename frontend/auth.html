@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wonder Baboon - Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Gloria+Hallelujah&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./auth.css">
+</head>
+<body>
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="auth-brand-logo-row">
+          <img src="./assets/logo.png" alt="" width="45" height="45" />
+          <h1 class="auth-brand-title">Wonder Baboon</h1>
+        </div>
+        <p class="auth-brand-tagline">Your next adventure starts here.</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="login">Login</button>
+        <button type="button" class="auth-tab" data-tab="signup">Sign Up</button>
+      </div>
+
+      <section id="loginPanel" class="auth-panel active">
+        <h2>Welcome back</h2>
+        <p class="auth-hint">Sign in with the email you used when you joined.</p>
+        <form id="loginForm">
+          <label for="loginIdentifier">Email</label>
+          <input id="loginIdentifier" type="text" autocomplete="username" required placeholder="you@email.com">
+          <label for="loginPassword">Password</label>
+          <input id="loginPassword" type="password" minlength="8" autocomplete="current-password" required>
+          <button type="submit">Login</button>
+        </form>
+      </section>
+
+      <section id="signupPanel" class="auth-panel">
+        <h2>Create account</h2>
+        <p class="auth-hint">Password needs uppercase, lowercase, and a number.</p>
+        <form id="signupForm">
+          <label>Full Name</label>
+          <input id="signupName" type="text" required>
+          <label>Email</label>
+          <input id="signupEmail" type="email" required>
+          <label>Mobile</label>
+          <input id="signupMobile" type="tel" required placeholder="10-digit Indian number">
+          <label>Password</label>
+          <input id="signupPassword" type="password" minlength="8" required>
+          <button type="submit">Create Account</button>
+        </form>
+      </section>
+
+      <div class="status" id="authStatus"></div>
+      <a class="back-link" href="./index.html">← Back to Home</a>
+    </div>
+  </div>
+  <script type="module" src="./js/auth.js"></script>
+</body>
+</html>

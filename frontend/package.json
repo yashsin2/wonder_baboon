@@ -1,0 +1,14 @@
+{
+  "name": "wonder-baboon-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "start": "npm run build && npx serve -l 3000"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4",
+    "typescript": "^5.8.3"
+  }
+}

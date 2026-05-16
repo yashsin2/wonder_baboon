@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Wonder Baboon</title>
+  <link rel="stylesheet" href="./admin-dashboard.css">
+</head>
+<body class="admin-page">
+  <div class="admin-layout">
+    <aside class="admin-sidebar" aria-label="Admin navigation">
+      <div class="admin-brand">
+        <p class="admin-brand-title">Wonder Baboon</p>
+        <p class="admin-brand-sub">Admin console</p>
+      </div>
+      <nav class="sidebar-nav" aria-label="Primary">
+        <button type="button" class="sidebar-nav-btn active" data-tab="stats-tab">Overview</button>
+        <button type="button" class="sidebar-nav-btn" data-tab="bookings-tab">Booking details</button>
+        <button type="button" class="sidebar-nav-btn" data-tab="trips-tab">Add trip</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button type="button" id="logoutBtn" class="btn-logout">Log out</button>
+      </div>
+    </aside>
+
+    <div class="admin-main">
+      <header class="admin-main-header">
+        <h1 id="adminPageTitle">Overview</h1>
+        <p id="adminPageSubtitle">Payment confirmation overview and catalogue.</p>
+      </header>
+
+      <div class="admin-main-body">
+        <div id="stats-tab" class="tab-content active">
+          <div class="dashboard-charts-row">
+            <div class="chart-card">
+              <h2>Confirmed vs pending</h2>
+              <p class="chart-caption">Paid (confirmed) versus unpaid bookings</p>
+              <div class="chart-wrap">
+                <canvas id="statsConfirmationDonut" aria-label="Payment confirmation chart"></canvas>
+              </div>
+            </div>
+            <div class="chart-card">
+              <h2>Trip type volume</h2>
+              <p class="chart-caption">Defined trips vs planned trips</p>
+              <div class="chart-wrap chart-wrap--bar">
+                <canvas id="statsTripTypeBar" aria-label="Defined vs planned bar chart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="stats-grid" id="statsGrid"></div>
+
+          <section class="panel">
+            <h2>New &amp; recent bookings</h2>
+            <p class="chart-caption" style="margin:-8px 0 12px;">Latest activity first</p>
+            <div class="recent-bookings-list" id="recentBookingsList"></div>
+          </section>
+
+          <h2 class="section-title">Featured trips</h2>
+          <div class="search-bar">
+            <input id="tripSearchInput" type="search" placeholder="Search trips by title or location…">
+            <button type="button" id="tripSearchBtn">Search</button>
+          </div>
+          <div class="trips-scroll-container" id="tripScrollContainer"></div>
+        </div>
+
+        <div id="bookings-tab" class="tab-content">
+          <div class="search-bar">
+            <input id="bookingSearchInput" type="search" placeholder="Search by destination, name, or mobile…">
+            <button type="button" id="bookingSearchBtn">Search</button>
+          </div>
+          <div class="booking-list" id="bookingList"></div>
+        </div>
+
+        <div id="trips-tab" class="tab-content">
+          <div class="form-section">
+            <h3>New trip</h3>
+            <p class="form-hint">Image file must already exist in the <code>assets</code> folder (e.g. lake.JPG).</p>
+
+            <form id="tripForm">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="tripTitle">Trip title</label>
+                  <input id="tripTitle" type="text" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                  <label for="tripLocation">Location</label>
+                  <input id="tripLocation" type="text" required autocomplete="off">
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="tripDuration">Duration label (e.g. 2D/1N)</label>
+                  <input id="tripDuration" type="text" required autocomplete="off">
+                </div>
+                <div class="form-group">
+                  <label for="tripPrice">Price (₹)</label>
+                  <input id="tripPrice" type="number" min="0" required>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="tripStartDate">Start date</label>
+                  <input id="tripStartDate" type="date" required>
+                </div>
+                <div class="form-group">
+                  <label for="tripEndDate">End date</label>
+                  <input id="tripEndDate" type="date" required>
+                </div>
+              </div>
+
+              <div class="form-row full">
+                <div class="form-group">
+                  <label for="tripImageName">Image file name in assets/ (e.g. nagtibba3.JPG)</label>
+                  <input id="tripImageName" type="text" placeholder="lake.JPG" required autocomplete="off">
+                </div>
+              </div>
+
+              <button type="submit" class="form-submit">Add trip to database</button>
+            </form>
+            <div id="tripFormStatus"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script type="module" src="./js/admin-dashboard.js"></script>
+</body>
+</html>

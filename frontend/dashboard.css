@@ -1,0 +1,154 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, #f6f2ea, #e7f2c8);
+  color: #1f2a16;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  background: #2a2318;
+  color: #ccff00;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 16px auto;
+  padding: 0 12px 30px;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  border: none;
+  background: #3f5125;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #ccff00;
+  color: #132000;
+  font-weight: 700;
+}
+
+.tab-pane {
+  display: none;
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+}
+
+.tab-pane.active {
+  display: block;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  background: #f4fbd8;
+  border-left: 5px solid #8cb800;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.stat h3 {
+  margin: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+input, button {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 8px;
+}
+
+input {
+  border: 1px solid #bcc9a0;
+  padding: 10px;
+  margin: 6px 0 12px;
+}
+
+button {
+  border: none;
+  background: #2f6f2f;
+  color: #fff;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.search-row {
+  display: flex;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid #d6ddc8;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fffef9;
+}
+
+.trip-strip {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.trip-item {
+  min-width: 240px;
+  border: 1px solid #d5ddb9;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8ffe9;
+}
+
+.trip-item img {
+  width: 100%;
+  height: 130px;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.muted {
+  color: #5e6a4a;
+}
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+  .search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

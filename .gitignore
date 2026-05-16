@@ -1,0 +1,22 @@
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+
+# Logs & OS noise
+*.log
+backend/logs/*.log
+.DS_Store
