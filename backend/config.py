@@ -35,7 +35,7 @@ if IS_PRODUCTION:
 PORT = int(os.getenv("PORT", "5051"))
 HOST = os.getenv("HOST", "0.0.0.0")
 
-_default_origins = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5051,http://127.0.0.1:5051"
+_default_origins = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5051,http://127.0.0.1:5051,https://wonderbaboon.com"
 _cors_raw = os.getenv("CORS_ORIGINS")
 if IS_PRODUCTION:
   if not (_cors_raw or "").strip():
