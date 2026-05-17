@@ -14,7 +14,7 @@ function resolveApiBase(): string {
   return `${protocol}//${hostname}/api`;
 }
 
-export const API_BASE_URL = resolveApiBase();
+export const API_BASE_URL = "http://api.wonderbaboon.com/api";
 
 export const logger = {
   info: (...args: unknown[]) => console.info("[wb]", ...args),
