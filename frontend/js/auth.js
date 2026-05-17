@@ -21,12 +21,17 @@ document.querySelectorAll(".auth-tab").forEach((tab) => {
 });
 document.getElementById("signupForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const rawEmail = document.getElementById("signupEmail").value.trim();
     const payload = {
         name: document.getElementById("signupName").value.trim(),
-        email: document.getElementById("signupEmail").value.trim(),
+        email: rawEmail,
         mobile: document.getElementById("signupMobile").value.trim(),
         password: document.getElementById("signupPassword").value,
     };
+    if (!rawEmail) {
+        showStatus("Email is required.");
+        return;
+    }
     try {
         const response = await fetch(`${API_BASE_URL}/auth/signup`, {
             method: "POST",

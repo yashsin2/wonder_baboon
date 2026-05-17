@@ -54,6 +54,13 @@ SMTP_PASSWORD = (os.getenv("SMTP_PASSWORD") or "").strip().strip('"').strip("'")
 SMTP_FROM = (os.getenv("SMTP_FROM") or SMTP_USER or "no-reply@wonderbaboon.local").strip()
 SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes"}
 
+# New booking alerts (plain-text email). Unset → baboonwonder@gmail.com; set to empty string to disable.
+_booking_notify = os.getenv("BOOKING_NOTIFY_EMAIL")
+if _booking_notify is None:
+  BOOKING_NOTIFY_EMAIL = "baboonwonder@gmail.com"
+else:
+  BOOKING_NOTIFY_EMAIL = _booking_notify.strip()
+
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))
 OTP_RATE_LIMIT_SECONDS = int(os.getenv("OTP_RATE_LIMIT_SECONDS", "60"))
 

@@ -25,6 +25,7 @@ from models import (
   UserSignupRequest,
 )
 from middleware.auth_rate_limit import auth_rate_limit_middleware
+from services.email_service import email_service
 from services.mongo_service import mongo_service
 from services.otp_service import otp_service
 
@@ -190,6 +191,7 @@ def guest_booking(payload: GuestBookingRequest):
     "createdAt": datetime.utcnow(),
   }
   mongo_service.insert_booking(doc)
+  email_service.notify_new_booking(doc)
   logger.info("guest booking trip=%s email=%s", payload.travel_destination, payload.email)
   return {"message": "booking saved"}
 
@@ -238,6 +240,7 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
     "createdAt": datetime.utcnow(),
   }
   mongo_service.insert_booking(doc)
+  email_service.notify_new_booking(doc)
   logger.info(
     "user booking trip=%s email=%s date=%s people=%s",
     trip.get("title"),
@@ -278,7 +281,9 @@ def patch_user_profile(
 def get_user_bookings(authorization: Optional[str] = Header(default=None)):
   token_payload = _require_user(authorization)
   email = token_payload.get("email", "")
-  return {"bookings": mongo_service.list_user_bookings(email)}
+  user = mongo_service.find_user_by_email(email)
+  mobile = (user.get("mobile") if user else None) or None
+  return {"bookings": mongo_service.list_user_bookings(email, mobile)}
 
 
 @app.post("/api/user/profile/email-otp/request")
@@ -361,6 +366,7 @@ def planned_trip(payload: PlannedTripRequest):
     "createdAt": datetime.utcnow(),
   }
   mongo_service.insert_booking(doc)
+  email_service.notify_new_booking(doc)
   logger.info("planned trip dest=%s email=%s", payload.travel_destination, payload.email)
   return {"message": "planned trip saved"}
 

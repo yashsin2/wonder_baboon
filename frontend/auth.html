@@ -37,12 +37,12 @@
 
       <section id="signupPanel" class="auth-panel">
         <h2>Create account</h2>
-        <p class="auth-hint">Password needs uppercase, lowercase, and a number.</p>
+        <p class="auth-hint">Email is required. Password needs uppercase, lowercase, and a number.</p>
         <form id="signupForm">
           <label>Full Name</label>
           <input id="signupName" type="text" required>
-          <label>Email</label>
-          <input id="signupEmail" type="email" required>
+          <label>Email (required)</label>
+          <input id="signupEmail" type="email" autocomplete="email" required placeholder="you@example.com">
           <label>Mobile</label>
           <input id="signupMobile" type="tel" required placeholder="10-digit Indian number">
           <label>Password</label>

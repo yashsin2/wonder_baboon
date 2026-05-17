@@ -24,12 +24,18 @@ document.querySelectorAll(".auth-tab").forEach((tab) => {
 
 (document.getElementById("signupForm") as HTMLFormElement).addEventListener("submit", async (event) => {
   event.preventDefault();
+  const rawEmail = (document.getElementById("signupEmail") as HTMLInputElement).value.trim();
   const payload = {
     name: (document.getElementById("signupName") as HTMLInputElement).value.trim(),
-    email: (document.getElementById("signupEmail") as HTMLInputElement).value.trim(),
+    email: rawEmail,
     mobile: (document.getElementById("signupMobile") as HTMLInputElement).value.trim(),
     password: (document.getElementById("signupPassword") as HTMLInputElement).value,
   };
+
+  if (!rawEmail) {
+    showStatus("Email is required.");
+    return;
+  }
 
   try {
     const response = await fetch(`${API_BASE_URL}/auth/signup`, {

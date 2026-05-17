@@ -13,6 +13,15 @@ class UserSignupRequest(BaseModel):
   mobile: str = Field(min_length=10, max_length=15)
   password: str = Field(min_length=8, max_length=72)
 
+  @field_validator("email", mode="before")
+  @classmethod
+  def email_required_nonempty(cls, value: object) -> object:
+    if value is None:
+      raise ValueError("email is required")
+    if isinstance(value, str) and not value.strip():
+      raise ValueError("email is required")
+    return value
+
   @field_validator("name")
   @classmethod
   def validate_name(cls, value: str) -> str:

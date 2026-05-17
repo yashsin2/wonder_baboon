@@ -275,8 +275,13 @@ class MongoService:
       return None
     return self.add_trip_collection.find_one({"_id": object_id})
 
-  def list_user_bookings(self, email: str) -> List[dict]:
-    bookings = list(self.user_trip_collection.find({"email": email}).sort("dateOfTravel", DESCENDING))
+  def list_user_bookings(self, email: str, mobile: Optional[str] = None) -> List[dict]:
+    clauses: List[Dict[str, Any]] = [{"email": email}]
+    m = (mobile or "").strip()
+    if m:
+      clauses.append({"mobile": m})
+    query: Dict[str, Any] = {"$or": clauses} if len(clauses) > 1 else clauses[0]
+    bookings = list(self.user_trip_collection.find(query).sort("dateOfTravel", DESCENDING))
     for booking in bookings:
       booking["_id"] = str(booking["_id"])
     return bookings
@@ -312,6 +317,7 @@ class MongoService:
           {"travelDestination": {"$regex": term, "$options": "i"}},
           {"fullName": {"$regex": term, "$options": "i"}},
           {"mobile": {"$regex": term, "$options": "i"}},
+          {"email": {"$regex": term, "$options": "i"}},
         ]
       }
     bookings = list(self.user_trip_collection.find(query).sort("createdAt", DESCENDING))
