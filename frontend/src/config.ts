@@ -1,20 +1,23 @@
 const ENV_API_BASE = (window as unknown as { __WB_API_BASE__?: string }).__WB_API_BASE__;
-const SERVER_HOSTS = new Set(["localhost", "72.60.200.102", ""]);
+/** Direct VPS IP in browser bar (legacy) */
+const SERVER_HOSTS = new Set(["72.60.200.102", ""]);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", ""]);
+const PRODUCTION_WEB_HOSTS = new Set(["wonderbaboon.com", "www.wonderbaboon.com"]);
+const PUBLIC_API_BASE = "https://api.wonderbaboon.com/api";
 
 function resolveApiBase(): string {
   if (ENV_API_BASE) return ENV_API_BASE.replace(/\/$/, "");
   const { protocol, hostname } = window.location;
-  if (SERVER_HOSTS.has(hostname)) {
-    return "http://api.wonderbaboon.com/api";
-  }
   if (LOCAL_HOSTS.has(hostname)) {
     return "http://localhost:5051/api";
+  }
+  if (PRODUCTION_WEB_HOSTS.has(hostname) || SERVER_HOSTS.has(hostname)) {
+    return PUBLIC_API_BASE;
   }
   return `${protocol}//${hostname}/api`;
 }
 
-export const API_BASE_URL = "http://api.wonderbaboon.com/api";
+export const API_BASE_URL = resolveApiBase();
 
 export const logger = {
   info: (...args: unknown[]) => console.info("[wb]", ...args),
@@ -159,12 +162,56 @@ export function showSuccessModal(title: string, message: string, ctaLabel = "Gre
 }
 
 export async function parseError(response: Response, data?: unknown): Promise<string> {
-  const body = data ?? (await response.json().catch(() => ({})));
-  const detail = (body as { detail?: string | { msg?: string }[] }).detail;
-  if (Array.isArray(detail)) {
-    return detail.map((item) => item.msg || "Request failed").join(", ");
+  const serviceUnavailable =
+    "We can't reach our servers right now. Please try again in a few minutes.";
+  const serverError = "Something went wrong on our side. Please try again later.";
+
+  let body: unknown = data;
+  if (body === undefined) {
+    const text = await response.text().catch(() => "");
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      if (response.status === 503) return serviceUnavailable;
+      if (response.status >= 500) return serverError;
+      const t = text.trim();
+      if (t.startsWith("<") || t.toLowerCase().includes("<!doctype")) {
+        return "Could not read server data (received a web page instead). Try Ctrl+Shift+R to reload without cache, or try again in a private/incognito window.";
+      }
+      return t ? `Something went wrong (${response.status}).` : `Request failed (${response.status})`;
+    }
   }
-  return typeof detail === "string" ? detail : "Request failed";
+
+  const obj = body as Record<string, unknown>;
+  const detail = obj.detail;
+
+  if (typeof detail === "string") {
+    if (response.status === 503 || /database|mongo|mongodb|mongo_uri/i.test(detail)) {
+      return serviceUnavailable;
+    }
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const parts = detail.map((item) => {
+      if (typeof item === "string") return item;
+      if (item && typeof item === "object" && "msg" in item) {
+        return String((item as { msg?: string; type?: string }).msg || "Invalid input");
+      }
+      return "Invalid input";
+    });
+    const joined = parts.filter(Boolean).join(", ");
+    if (joined) return joined;
+    return response.status >= 500 ? serverError : "Request failed";
+  }
+
+  if (detail && typeof detail === "object" && "msg" in detail) {
+    return String((detail as { msg?: string }).msg || "Request failed");
+  }
+
+  if (response.status === 503) return serviceUnavailable;
+  if (response.status >= 500) return serverError;
+  return "Request failed";
 }
 
 export function parseTravelDate(dateStr: string): Date {

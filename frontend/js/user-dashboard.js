@@ -1,4 +1,4 @@
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate } from "./config.js";
+import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError } from "./config.js";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "user") {
     window.location.href = "./auth.html";
@@ -25,7 +25,7 @@ async function loadUserProfile() {
         const res = await fetch(`${API_BASE_URL}/user/profile`, { headers: authHeaders });
         const data = await res.json();
         if (!res.ok)
-            throw new Error(data.detail || "Failed to load profile");
+            throw new Error(await parseError(res, data));
         document.getElementById("profileName").textContent = data.name;
         document.getElementById("profileEmail").textContent = data.email;
         document.getElementById("profileMobile").textContent = data.mobile;
@@ -41,7 +41,7 @@ async function loadUserBookings() {
         const res = await fetch(`${API_BASE_URL}/user/bookings`, { headers: authHeaders });
         const data = await res.json();
         if (!res.ok)
-            throw new Error(data.detail || "Failed to load bookings");
+            throw new Error(await parseError(res, data));
         const bookings = (data.bookings || []);
         const upcoming = bookings.filter((b) => isUpcomingTravelDate(b.dateOfTravel));
         const completed = bookings.filter((b) => !isUpcomingTravelDate(b.dateOfTravel));

@@ -325,14 +325,28 @@ function renderTrips(trips, options) {
 async function loadTrips() {
     try {
         const response = await fetch(`${API_BASE_URL}/trips`);
-        const payload = await response.json();
+        const text = await response.text();
+        let payload = {};
+        if (text) {
+            try {
+                payload = JSON.parse(text);
+            }
+            catch {
+                throw new Error("Could not load trips — the server sent an invalid response. Try Ctrl+Shift+R (hard refresh) or clear cached files for this site.");
+            }
+        }
         if (!response.ok)
-            throw new Error(await parseError(response));
+            throw new Error(await parseError(response, payload));
         allTrips = payload.trips || [];
         renderTrips(allTrips);
     }
     catch (error) {
-        showMessagePopup(error instanceof Error ? error.message : "Trips not loaded", "error");
+        const msg = error instanceof TypeError && (error.message.includes("fetch") || error.message.includes("Load failed"))
+            ? "Can't reach the trip server. Check your connection or try again."
+            : error instanceof Error
+                ? error.message
+                : "Trips could not be loaded.";
+        showMessagePopup(msg, "error");
     }
 }
 function filterTripsAndReveal(opts) {

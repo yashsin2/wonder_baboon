@@ -24,7 +24,9 @@ class MongoService:
 
   def connect(self) -> None:
     if not MONGO_URI:
-      raise RuntimeError("MONGO_URI is required")
+      raise RuntimeError(
+        "This server isn't set up to reach the database. Please contact support."
+      )
     self._client = MongoClient(
       MONGO_URI,
       serverSelectionTimeoutMS=10000,
@@ -44,7 +46,10 @@ class MongoService:
     if self._client is None:
       self.connect()
     if not self._ready or self._db is None:
-      raise RuntimeError("MongoDB is unavailable. Check MONGO_URI and Atlas network access.")
+      logger.error("MongoDB unavailable: ensure_ready failed (connected=%s)", self._ready)
+      raise RuntimeError(
+        "We can't load your data right now. Please try again in a few minutes."
+      )
 
   def is_connected(self) -> bool:
     return self._ready

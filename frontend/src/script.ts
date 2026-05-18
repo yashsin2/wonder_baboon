@@ -371,12 +371,28 @@ function renderTrips(trips: Trip[], options?: { emptyHint?: string }): void {
 async function loadTrips(): Promise<void> {
   try {
     const response = await fetch(`${API_BASE_URL}/trips`);
-    const payload = await response.json();
-    if (!response.ok) throw new Error(await parseError(response));
+    const text = await response.text();
+    let payload: { trips?: Trip[] } = {};
+    if (text) {
+      try {
+        payload = JSON.parse(text) as { trips?: Trip[] };
+      } catch {
+        throw new Error(
+          "Could not load trips — the server sent an invalid response. Try Ctrl+Shift+R (hard refresh) or clear cached files for this site."
+        );
+      }
+    }
+    if (!response.ok) throw new Error(await parseError(response, payload));
     allTrips = payload.trips || [];
     renderTrips(allTrips);
   } catch (error) {
-    showMessagePopup(error instanceof Error ? error.message : "Trips not loaded", "error");
+    const msg =
+      error instanceof TypeError && (error.message.includes("fetch") || error.message.includes("Load failed"))
+        ? "Can't reach the trip server. Check your connection or try again."
+        : error instanceof Error
+          ? error.message
+          : "Trips could not be loaded.";
+    showMessagePopup(msg, "error");
   }
 }
 

@@ -121,7 +121,7 @@ async function mountBookingsPage(kind: "upcoming" | "previous"): Promise<void> {
   try {
     const res = await apiFetch("/user/bookings");
     const data = (await res.json()) as BookingsResponse & { detail?: string };
-    if (!res.ok) throw new Error(data.detail || "Failed to load bookings");
+    if (!res.ok) throw new Error(await parseError(res, data));
     const filtered =
       kind === "upcoming"
         ? data.bookings.filter((b) => isUpcomingTravelDate(b.dateOfTravel))
@@ -180,7 +180,7 @@ async function mountSettingsPage(): Promise<void> {
   try {
     const res = await apiFetch("/user/profile");
     const profile = (await res.json()) as ProfileResponse & { detail?: string };
-    if (!res.ok) throw new Error(profile.detail || "Failed to load profile");
+    if (!res.ok) throw new Error(await parseError(res, profile));
     body.innerHTML = settingsForm(profile);
     document.getElementById("saveName")?.addEventListener("click", () => void saveName());
     document.getElementById("changeEmail")?.addEventListener("click", () => void startChangeEmail());
@@ -272,7 +272,7 @@ function promptOtp(kind: "email" | "mobile", newValue: string): void {
         token?: string;
         user?: { name?: string; email?: string };
       };
-      if (!res.ok) throw new Error(data.detail || "Verification failed");
+      if (!res.ok) throw new Error(await parseError(res, data));
       if (kind === "email" && data.token && data.user) {
         saveSession(data.token, { name: data.user.name, email: data.user.email, role: "user" });
         showSuccessModal("Email updated", "Your account email has been changed.");

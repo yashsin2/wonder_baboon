@@ -1,6 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+  (function () {
+    var h = location.hostname;
+    if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
+      window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";
+    }
+  })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <meta charset="UTF-8">
