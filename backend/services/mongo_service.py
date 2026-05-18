@@ -231,6 +231,7 @@ class MongoService:
           "startDate": 1,
           "endDate": 1,
           "imageUrl": 1,
+          "itineraryHtml": 1,
         },
       ).sort("startDate", ASCENDING)
     )
@@ -280,6 +281,93 @@ class MongoService:
       return None
     return self.add_trip_collection.find_one({"_id": object_id})
 
+  def _trip_object_id(self, trip_id: str) -> ObjectId:
+    return ObjectId(trip_id)
+
+  def add_trip(self, payload: dict) -> str:
+    slug = re.sub(r"[^a-z0-9-]", "", payload["title"].lower().strip().replace(" ", "-"))
+    doc = {
+      "title": payload["title"],
+      "slug": slug,
+      "location": payload["location"],
+      "durationLabel": payload["duration_label"],
+      "price": payload["price"],
+      "startDate": payload["start_date"],
+      "endDate": payload["end_date"],
+      "imageUrl": f"./assets/{payload['image_name']}",
+      "published": payload.get("published", True),
+      "createdAt": datetime.utcnow(),
+    }
+    if payload.get("itineraryHtml"):
+      doc["itineraryHtml"] = str(payload["itineraryHtml"])[:800_000]
+      doc["itineraryUpdatedAt"] = datetime.utcnow()
+    result = self.add_trip_collection.insert_one(doc)
+    return str(result.inserted_id)
+
+  def update_trip(self, trip_id: str, fields: Dict[str, Any]) -> bool:
+    """Partial update. Keys are API names: title, location, duration_label, price, start_date, end_date, image_name, published."""
+    try:
+      oid = self._trip_object_id(trip_id)
+    except Exception:
+      return False
+
+    update: Dict[str, Any] = {}
+    if "title" in fields and fields["title"] is not None:
+      title = str(fields["title"]).strip()
+      update["title"] = title
+      new_slug = re.sub(r"[^a-z0-9-]", "", title.lower().replace(" ", "-"))
+      conflict = self.add_trip_collection.find_one({"slug": new_slug, "_id": {"$ne": oid}})
+      if conflict:
+        raise ValueError("another trip already uses this title slug; choose a different title")
+      update["slug"] = new_slug
+    if "location" in fields and fields["location"] is not None:
+      update["location"] = str(fields["location"]).strip()
+    if "duration_label" in fields and fields["duration_label"] is not None:
+      update["durationLabel"] = str(fields["duration_label"]).strip()
+    if "price" in fields and fields["price"] is not None:
+      update["price"] = int(fields["price"])
+    if "start_date" in fields and fields["start_date"] is not None:
+      update["startDate"] = str(fields["start_date"]).strip()
+    if "end_date" in fields and fields["end_date"] is not None:
+      update["endDate"] = str(fields["end_date"]).strip()
+    if "published" in fields and fields["published"] is not None:
+      update["published"] = bool(fields["published"])
+    if "image_name" in fields and fields["image_name"] is not None:
+      iname = str(fields["image_name"]).strip()
+      update["imageUrl"] = f"./assets/{iname}"
+
+    if not update:
+      return True
+
+    result = self.add_trip_collection.update_one({"_id": oid}, {"$set": update})
+    return result.matched_count > 0
+
+  def delete_trip(self, trip_id: str) -> bool:
+    try:
+      oid = self._trip_object_id(trip_id)
+    except Exception:
+      return False
+    result = self.add_trip_collection.delete_one({"_id": oid})
+    return result.deleted_count > 0
+
+  def set_trip_itinerary_html(self, trip_id: str, html_fragment: Optional[str]) -> bool:
+    try:
+      oid = self._trip_object_id(trip_id)
+    except Exception:
+      return False
+    if html_fragment is None:
+      result = self.add_trip_collection.update_one(
+        {"_id": oid},
+        {"$unset": {"itineraryHtml": "", "itineraryUpdatedAt": ""}},
+      )
+      return result.matched_count > 0
+    trimmed = str(html_fragment)[:800_000]
+    result = self.add_trip_collection.update_one(
+      {"_id": oid},
+      {"$set": {"itineraryHtml": trimmed, "itineraryUpdatedAt": datetime.utcnow()}},
+    )
+    return result.matched_count > 0
+
   def list_user_bookings(self, email: str, mobile: Optional[str] = None) -> List[dict]:
     clauses: List[Dict[str, Any]] = [{"email": email}]
     m = (mobile or "").strip()
@@ -289,6 +377,11 @@ class MongoService:
     bookings = list(self.user_trip_collection.find(query).sort("dateOfTravel", DESCENDING))
     for booking in bookings:
       booking["_id"] = str(booking["_id"])
+      tid = booking.get("tripId")
+      if tid:
+        trip = self.find_trip_by_id(str(tid))
+        if trip and trip.get("itineraryHtml"):
+          booking["itineraryHtml"] = trip["itineraryHtml"]
     return bookings
 
   def get_admin_stats(self) -> Dict[str, Any]:
@@ -338,22 +431,6 @@ class MongoService:
     for trip in trips:
       trip["_id"] = str(trip["_id"])
     return trips
-
-  def add_trip(self, payload: dict) -> None:
-    slug = re.sub(r"[^a-z0-9-]", "", payload["title"].lower().strip().replace(" ", "-"))
-    doc = {
-      "title": payload["title"],
-      "slug": slug,
-      "location": payload["location"],
-      "durationLabel": payload["duration_label"],
-      "price": payload["price"],
-      "startDate": payload["start_date"],
-      "endDate": payload["end_date"],
-      "imageUrl": f"./assets/{payload['image_name']}",
-      "published": payload.get("published", True),
-      "createdAt": datetime.utcnow(),
-    }
-    self.add_trip_collection.insert_one(doc)
 
 
 mongo_service = MongoService()

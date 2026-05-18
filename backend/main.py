@@ -3,9 +3,9 @@ import logging
 import time
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -15,6 +15,7 @@ from logging_setup import configure_logging
 from models import (
   AdminConfirmBookingRequest,
   AdminTripCreateRequest,
+  AdminTripUpdateRequest,
   EmailOtpRequest,
   GuestBookingRequest,
   MobileOtpRequest,
@@ -26,6 +27,7 @@ from models import (
 )
 from middleware.auth_rate_limit import auth_rate_limit_middleware
 from services.email_service import email_service
+from services.itinerary_pdf import pdf_bytes_to_itinerary_html
 from services.mongo_service import mongo_service
 from services.otp_service import otp_service
 
@@ -34,6 +36,20 @@ if not JWT_SECRET:
 
 configure_logging()
 logger = logging.getLogger("wb.main")
+
+
+def _traveler_document_fields(primary_name: str, additional: List[str]) -> Dict[str, Any]:
+  """Ordered travelers + traveler1..travelerN for storage and emails."""
+  primary = sanitize_text(str(primary_name).strip(), "full_name")
+  names: List[str] = [primary]
+  for extra in additional:
+    names.append(sanitize_text(str(extra).strip(), "full_name"))
+  out: Dict[str, Any] = {"travelers": names}
+  for i, nm in enumerate(names, start=1):
+    if i <= 20:
+      out[f"traveler{i}"] = nm
+  return out
+
 
 app = FastAPI(title="Wonder Baboon API")
 
@@ -177,6 +193,7 @@ def list_trips():
 
 @app.post("/api/bookings/guest")
 def guest_booking(payload: GuestBookingRequest):
+  tfields = _traveler_document_fields(payload.full_name, payload.additional_travelers)
   doc = {
     "tripType": "defined_trip",
     "tripId": payload.trip_id,
@@ -189,6 +206,7 @@ def guest_booking(payload: GuestBookingRequest):
     "payment": "unpaid",
     "source": "guest_booking",
     "createdAt": datetime.utcnow(),
+    **tfields,
   }
   mongo_service.insert_booking(doc)
   email_service.notify_new_booking(doc)
@@ -226,6 +244,28 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
   if people < 1 or people > 20:
     raise HTTPException(status_code=400, detail="number of people must be between 1 and 20")
 
+  raw_extras = payload.get("additional_travelers") or []
+  if not isinstance(raw_extras, list):
+    raw_extras = []
+  extras: List[str] = []
+  for x in raw_extras[:19]:
+    s = str(x).strip()
+    if s:
+      extras.append(sanitize_text(s, "full_name"))
+  need = people - 1
+  if len(extras) != need:
+    raise HTTPException(
+      status_code=400,
+      detail=f"Provide exactly {need} additional traveler name(s) for {people} people.",
+    )
+  lead_name = str(user.get("name") or "").strip()
+  if people > 1 and len(lead_name) < 2:
+    raise HTTPException(
+      status_code=400,
+      detail="Add your full name in Settings before booking for more than one person.",
+    )
+  tfields = _traveler_document_fields(lead_name or "Traveler", extras)
+
   doc = {
     "tripType": "defined_trip",
     "tripId": trip_id,
@@ -238,6 +278,7 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
     "payment": "unpaid",
     "source": "logged_in_direct_booking",
     "createdAt": datetime.utcnow(),
+    **tfields,
   }
   mongo_service.insert_booking(doc)
   email_service.notify_new_booking(doc)
@@ -353,6 +394,7 @@ def verify_mobile_otp(payload: OtpVerifyRequest, authorization: Optional[str] = 
 
 @app.post("/api/planned-trips")
 def planned_trip(payload: PlannedTripRequest):
+  tfields = _traveler_document_fields(payload.full_name, payload.additional_travelers)
   doc = {
     "tripType": "planned_trip",
     "travelDestination": payload.travel_destination,
@@ -364,6 +406,7 @@ def planned_trip(payload: PlannedTripRequest):
     "payment": "unpaid",
     "source": "planned_trip_form",
     "createdAt": datetime.utcnow(),
+    **tfields,
   }
   mongo_service.insert_booking(doc)
   email_service.notify_new_booking(doc)
@@ -404,8 +447,58 @@ def admin_trips(search: str = "", _: dict = Depends(require_admin)):
 
 @app.post("/api/admin/trips")
 def admin_add_trip(payload: AdminTripCreateRequest, _: dict = Depends(require_admin)):
-  mongo_service.add_trip(payload.model_dump())
-  return {"message": "trip detail added"}
+  trip_id = mongo_service.add_trip(payload.model_dump())
+  return {"message": "trip detail added", "trip_id": trip_id}
+
+
+@app.patch("/api/admin/trips/{trip_id}")
+def admin_update_trip(
+  trip_id: str,
+  payload: AdminTripUpdateRequest,
+  _: dict = Depends(require_admin),
+):
+  try:
+    ok = mongo_service.update_trip(trip_id, payload.model_dump(exclude_unset=True))
+  except ValueError as exc:
+    raise HTTPException(status_code=409, detail=str(exc)) from exc
+  if not ok:
+    raise HTTPException(status_code=404, detail="trip not found")
+  return {"message": "trip updated"}
+
+
+@app.delete("/api/admin/trips/{trip_id}")
+def admin_delete_trip(trip_id: str, _: dict = Depends(require_admin)):
+  if not mongo_service.delete_trip(trip_id):
+    raise HTTPException(status_code=404, detail="trip not found")
+  return {"message": "trip deleted"}
+
+
+@app.post("/api/admin/trips/{trip_id}/itinerary")
+async def admin_upload_trip_itinerary(
+  trip_id: str,
+  file: UploadFile = File(...),
+  _: dict = Depends(require_admin),
+):
+  filename = (file.filename or "").strip()
+  if not filename.lower().endswith(".pdf"):
+    raise HTTPException(status_code=400, detail="Upload a PDF file (.pdf)")
+  data = await file.read()
+  if len(data) > 5 * 1024 * 1024:
+    raise HTTPException(status_code=400, detail="PDF must be 5MB or smaller")
+  try:
+    html_fragment = pdf_bytes_to_itinerary_html(data)
+  except ValueError as exc:
+    raise HTTPException(status_code=400, detail=str(exc)) from exc
+  if not mongo_service.set_trip_itinerary_html(trip_id, html_fragment):
+    raise HTTPException(status_code=404, detail="trip not found")
+  return {"message": "itinerary saved from PDF"}
+
+
+@app.delete("/api/admin/trips/{trip_id}/itinerary")
+def admin_clear_trip_itinerary(trip_id: str, _: dict = Depends(require_admin)):
+  if not mongo_service.set_trip_itinerary_html(trip_id, None):
+    raise HTTPException(status_code=404, detail="trip not found")
+  return {"message": "custom itinerary removed"}
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 import re
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from auth_utils import sanitize_text
 
@@ -64,6 +64,31 @@ class GuestBookingRequest(BaseModel):
   mobile: str = Field(min_length=10, max_length=15)
   email: Optional[EmailStr] = None
   number_of_people: int = Field(ge=1, le=20, default=1)
+  additional_travelers: List[str] = Field(default_factory=list, max_length=19)
+
+  @field_validator("additional_travelers", mode="before")
+  @classmethod
+  def coerce_guest_extras(cls, value: object) -> List[str]:
+    if value is None:
+      return []
+    if not isinstance(value, list):
+      return []
+    return [str(x).strip() for x in value if str(x).strip()]
+
+  @field_validator("additional_travelers")
+  @classmethod
+  def sanitize_guest_extras(cls, value: List[str]) -> List[str]:
+    return [sanitize_text(item, "full_name") for item in value[:19]]
+
+  @model_validator(mode="after")
+  def guest_extras_match_people(self) -> "GuestBookingRequest":
+    need = self.number_of_people - 1
+    if len(self.additional_travelers) != need:
+      raise ValueError(
+        f"When booking for {self.number_of_people} people, enter {need} additional traveler name(s) "
+        "(full name for each extra person)."
+      )
+    return self
 
   @field_validator("trip_id", "travel_destination", "full_name")
   @classmethod
@@ -94,6 +119,30 @@ class PlannedTripRequest(BaseModel):
   mobile: str = Field(min_length=10, max_length=15)
   email: Optional[EmailStr] = None
   number_of_people: int = Field(ge=1, le=20, default=1)
+  additional_travelers: List[str] = Field(default_factory=list, max_length=19)
+
+  @field_validator("additional_travelers", mode="before")
+  @classmethod
+  def coerce_additional_travelers(cls, value: object) -> List[str]:
+    if value is None:
+      return []
+    if not isinstance(value, list):
+      return []
+    return [str(x).strip() for x in value if str(x).strip()]
+
+  @field_validator("additional_travelers")
+  @classmethod
+  def validate_additional_travelers_planned(cls, value: List[str]) -> List[str]:
+    return [sanitize_text(item, "full_name") for item in value[:19]]
+
+  @model_validator(mode="after")
+  def match_people_count_planned(self) -> "PlannedTripRequest":
+    need = self.number_of_people - 1
+    if len(self.additional_travelers) != need:
+      raise ValueError(
+        f"When booking for {self.number_of_people} people, enter {need} additional traveler name(s)."
+      )
+    return self
 
   @field_validator("travel_destination", "full_name")
   @classmethod
@@ -186,3 +235,36 @@ class AdminTripCreateRequest(BaseModel):
   def validate_date(cls, value: str) -> str:
     datetime.strptime(value, "%Y-%m-%d")
     return value
+
+
+class AdminTripUpdateRequest(BaseModel):
+  title: Optional[str] = Field(default=None, min_length=3, max_length=120)
+  location: Optional[str] = Field(default=None, min_length=2, max_length=80)
+  duration_label: Optional[str] = Field(default=None, min_length=2, max_length=30)
+  price: Optional[int] = Field(default=None, ge=0, le=200000)
+  start_date: Optional[str] = None
+  end_date: Optional[str] = None
+  image_name: Optional[str] = Field(default=None, min_length=3, max_length=120)
+  published: Optional[bool] = None
+
+  @field_validator("title", "location", "duration_label", "image_name")
+  @classmethod
+  def validate_optional_text(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    return sanitize_text(value)
+
+  @field_validator("start_date", "end_date")
+  @classmethod
+  def validate_optional_date(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    datetime.strptime(value, "%Y-%m-%d")
+    return value
+
+  @model_validator(mode="after")
+  def at_least_one_field(self) -> "AdminTripUpdateRequest":
+    data = self.model_dump(exclude_unset=True)
+    if not data:
+      raise ValueError("submit at least one field to update")
+    return self

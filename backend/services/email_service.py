@@ -81,9 +81,23 @@ class EmailService:
       f"Mobile:         {doc.get('mobile')}",
       f"Email:          {doc.get('email') or '—'}",
       f"People:         {doc.get('numberOfPeople')}",
-      f"Payment:        {doc.get('payment')}",
-      f"Source:         {doc.get('source')}",
     ]
+    travelers = doc.get("travelers")
+    if isinstance(travelers, list) and travelers:
+      lines.append("Travelers:")
+      for i, nm in enumerate(travelers, start=1):
+        lines.append(f"  {i}. {nm}")
+    else:
+      for i in range(1, 21):
+        key = f"traveler{i}"
+        if key in doc and doc.get(key):
+          lines.append(f"  {key}: {doc.get(key)}")
+    lines.extend(
+      [
+        f"Payment:        {doc.get('payment')}",
+        f"Source:         {doc.get('source')}",
+      ]
+    )
     created = doc.get("createdAt")
     if isinstance(created, datetime):
       lines.append(f"Created:        {created.isoformat()}")
