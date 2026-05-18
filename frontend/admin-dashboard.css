@@ -692,3 +692,209 @@ body.admin-page {
   color: #b91c1c;
   font-size: 0.875rem;
 }
+
+/* Trip catalogue management (admin trips tab) */
+.trip-manage-panel {
+  margin-top: 40px;
+  padding-top: 28px;
+  border-top: 1px solid var(--adm-border);
+}
+
+.trip-manage-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.trip-manage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.trip-manage-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid var(--adm-border);
+  border-radius: 10px;
+}
+
+.trip-manage-main strong {
+  display: block;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.trip-manage-meta {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--adm-muted);
+}
+
+.trip-manage-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.badge-itin {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.badge-itin--yes {
+  background: #ecfdf5;
+  color: #065f46;
+}
+.badge-itin--no {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.badge-pub--yes {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.badge-pub--no {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.trip-manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-second {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border);
+  background: #fff;
+  color: var(--adm-text);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-second:hover {
+  background: #f8fafc;
+}
+
+.btn-second:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-file-label {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.btn-file-label input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.btn-danger-outline {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fff;
+}
+
+.btn-danger-outline:hover {
+  background: #fef2f2;
+}
+
+.admin-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.admin-modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 22px;
+  width: min(440px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+}
+
+.admin-modal h3 {
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.admin-modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.admin-modal-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--adm-text);
+}
+
+.admin-modal-form input[type="text"],
+.admin-modal-form input[type="number"],
+.admin-modal-form input[type="date"] {
+  padding: 10px 11px;
+  border: 1px solid var(--adm-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+}
+
+.checkbox-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.admin-modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.btn-cancel {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border);
+  background: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-cancel:hover {
+  background: #f8fafc;
+}

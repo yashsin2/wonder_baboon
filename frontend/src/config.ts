@@ -41,6 +41,8 @@ export interface Trip {
   startDate: string;
   endDate?: string;
   imageUrl?: string;
+  /** From DB when admin uploads a PDF itinerary */
+  itineraryHtml?: string;
 }
 
 export interface Booking {
@@ -53,6 +55,11 @@ export interface Booking {
   fullName?: string;
   mobile?: string;
   email?: string;
+  tripId?: string;
+  /** Lead + additional travelers in order (when stored by newer bookings) */
+  travelers?: string[];
+  /** Copied from packaged trip when tripId is set and trip has custom itinerary */
+  itineraryHtml?: string;
   /** Admin-settlement; unset treated as unpaid for user messaging */
   payment?: string;
 }

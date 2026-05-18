@@ -125,9 +125,26 @@
                 </div>
               </div>
 
+              <div class="form-row full">
+                <div class="form-group">
+                  <label for="newTripItineraryPdf">Optional: itinerary PDF (text extracted after trip is created)</label>
+                  <input id="newTripItineraryPdf" type="file" accept="application/pdf,.pdf">
+                </div>
+              </div>
+
               <button type="submit" class="form-submit">Add trip to database</button>
             </form>
             <div id="tripFormStatus"></div>
+
+            <div class="trip-manage-panel">
+              <h3>Manage catalogue trips</h3>
+              <p class="form-hint">Edit, delete, or attach a PDF itinerary. PDFs are converted to readable text on the site (not the original PDF).</p>
+              <div class="search-bar">
+                <input id="adminTripManageSearch" type="search" placeholder="Filter by title…">
+                <button type="button" id="adminTripManageSearchBtn">Filter</button>
+              </div>
+              <div id="tripManageList" class="trip-manage-list"></div>
+            </div>
           </div>
         </div>
       </div>

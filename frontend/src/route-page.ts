@@ -11,6 +11,7 @@ import {
   showSuccessModal,
   updateHeaderAuth,
 } from "./config.js";
+import { getItineraryHtml } from "./trip-itineraries.js";
 
 interface ProfileResponse {
   name: string;
@@ -56,6 +57,95 @@ function escapeHtml(raw: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Populated when bookings list is loaded; used for detail modal */
+const bookingDetailById = new Map<string, Booking>();
+
+function bookingTravelersDisplay(b: Booking): string[] {
+  if (Array.isArray(b.travelers) && b.travelers.length) {
+    return b.travelers.map((n) => String(n));
+  }
+  const out: string[] = [];
+  if (b.fullName) out.push(String(b.fullName));
+  const rec = b as unknown as Record<string, unknown>;
+  for (let i = 2; i <= 20; i++) {
+    const v = rec[`traveler${i}`];
+    if (v) out.push(String(v));
+  }
+  return out;
+}
+
+function bookingItinerarySectionHtml(booking: Booking): string {
+  const fromDb = (booking.itineraryHtml || "").trim();
+  const body = fromDb || getItineraryHtml(String(booking.travelDestination ?? ""), "") || "";
+  if (!body) return "";
+  return `<section class="booking-detail-itinerary"><h4>Itinerary</h4><div class="itinerary-modal-body booking-detail-itinerary-inner">${body}</div></section>`;
+}
+
+function openBookingDetailModal(booking: Booking): void {
+  const dest = escapeHtml(String(booking.travelDestination ?? ""));
+  const pay = booking.payment === "paid" ? "Paid / confirmed" : "Pending payment";
+  const tripBadge =
+    booking.tripType === "defined_trip"
+      ? `<span class="badge defined">Packaged trip</span>`
+      : `<span class="badge planned">Planned trip</span>`;
+  const names = bookingTravelersDisplay(booking);
+  const travelersHtml =
+    names.length > 0
+      ? `<ol class="booking-detail-travelers">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ol>`
+      : `<p class="muted">No traveler list on file for this booking.</p>`;
+  const itineraryBlock = bookingItinerarySectionHtml(booking);
+
+  const wrap = document.createElement("div");
+  wrap.className = "wb-modal";
+  wrap.innerHTML = `
+    <div class="wb-modal-card wb-modal-card--wide wb-modal-card--tall booking-detail-shell">
+      <div class="wb-modal-head">
+        <h3>Your trip · ${dest}</h3>
+        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="wb-modal-body-scroll booking-detail-body">
+        <div class="booking-detail-chips">${tripBadge}<span class="booking-detail-pay">${escapeHtml(pay)}</span></div>
+        <div class="booking-detail-grid">
+          <div>
+            <div class="booking-detail-row"><span class="k">Travel date</span><span class="v">${escapeHtml(
+              new Date(booking.dateOfTravel).toLocaleDateString()
+            )}</span></div>
+            <div class="booking-detail-row"><span class="k">Travelers</span><span class="v">${booking.numberOfPeople}</span></div>
+            <div class="booking-detail-row"><span class="k">Booked on</span><span class="v">${escapeHtml(
+              new Date(booking.createdAt).toLocaleDateString()
+            )}</span></div>
+          </div>
+          <div>
+            <div class="booking-detail-row"><span class="k">Contact</span><span class="v">${escapeHtml(
+              String(booking.mobile ?? "—")
+            )}</span></div>
+            <div class="booking-detail-row"><span class="k">Email</span><span class="v">${escapeHtml(
+              String(booking.email ?? "—")
+            )}</span></div>
+            ${
+              booking.tripId
+                ? `<div class="booking-detail-row"><span class="k">Trip ID</span><span class="v">${escapeHtml(
+                    String(booking.tripId)
+                  )}</span></div>`
+                : ""
+            }
+          </div>
+        </div>
+        <div class="booking-detail-names-block">
+          <h4>Traveler names</h4>
+          ${travelersHtml}
+        </div>
+        ${itineraryBlock}
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = (): void => wrap.remove();
+  wrap.querySelector(".wb-modal-close")?.addEventListener("click", close);
+  wrap.addEventListener("click", (e) => {
+    if (e.target === wrap) close();
+  });
+}
+
 function upcomingPaymentNote(booking: Booking): string {
   const paid = booking.payment === "paid";
   if (paid) {
@@ -84,9 +174,10 @@ function renderBookingsToList(
   target.innerHTML = items
     .map((b) => {
       const dest = escapeHtml(String(b.travelDestination ?? ""));
+      const bid = escapeHtml(String(b._id ?? ""));
       const paymentBlock = showPaymentNote ? upcomingPaymentNote(b) : "";
       return `
-      <article class="route-booking">
+      <article class="route-booking route-booking--interactive" data-booking-id="${bid}" role="button" tabindex="0" aria-label="View booking details for ${dest}">
         <header>
           <h3>${dest}</h3>
           <span class="badge ${b.tripType === "defined_trip" ? "defined" : "planned"}">
@@ -126,6 +217,8 @@ async function mountBookingsPage(kind: "upcoming" | "previous"): Promise<void> {
       kind === "upcoming"
         ? data.bookings.filter((b) => isUpcomingTravelDate(b.dateOfTravel))
         : data.bookings.filter((b) => !isUpcomingTravelDate(b.dateOfTravel));
+    bookingDetailById.clear();
+    filtered.forEach((b) => bookingDetailById.set(b._id, b));
     renderBookingsToList(
       list,
       filtered,
@@ -303,9 +396,23 @@ function syncRouteHeroHeaderGap(): void {
   }
 }
 
+function registerBookingCardInteraction(): void {
+  const handler = (event: MouseEvent): void => {
+    const article = (event.target as HTMLElement).closest("[data-booking-id]");
+    if (!article) return;
+    const id = article.getAttribute("data-booking-id");
+    if (!id || !bookingDetailById.has(id)) return;
+    event.preventDefault();
+    openBookingDetailModal(bookingDetailById.get(id)!);
+  };
+  document.getElementById("upcomingList")?.addEventListener("click", handler);
+  document.getElementById("previousList")?.addEventListener("click", handler);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   updateHeaderAuth();
   syncRouteHeroHeaderGap();
+  registerBookingCardInteraction();
   if (page === "upcoming") void mountBookingsPage("upcoming");
   else if (page === "previous") void mountBookingsPage("previous");
   else if (page === "settings") void mountSettingsPage();

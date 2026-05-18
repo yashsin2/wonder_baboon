@@ -1237,6 +1237,185 @@ body[data-page="previous"] .route-empty-neon-text {
   font-size: 18px;
 }
 
+.wb-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.wb-modal-head h3 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.wb-modal-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(47, 38, 27, 0.08);
+  color: #2f261b;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.wb-modal-close:hover {
+  background: rgba(47, 38, 27, 0.14);
+}
+
+.wb-modal-card--wide {
+  width: min(720px, 100%);
+}
+
+.wb-modal-card--tall {
+  max-height: min(92vh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wb-modal-body-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  padding-right: 4px;
+  margin-right: -4px;
+}
+
+.itinerary-modal-body,
+.booking-detail-itinerary-inner {
+  font-size: 14px;
+  color: #3d3428;
+}
+
+.itinerary-modal-body h4,
+.booking-detail-itinerary-inner h4 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+  color: #2f261b;
+}
+
+.itinerary-modal-body h4:first-child,
+.booking-detail-itinerary-inner h4:first-child {
+  margin-top: 0;
+}
+
+.itinerary-modal-body ul,
+.booking-detail-itinerary-inner ul {
+  margin: 0 0 8px;
+  padding-left: 1.2rem;
+}
+
+.itinerary-modal-body li,
+.booking-detail-itinerary-inner li {
+  margin: 4px 0;
+}
+
+.itinerary-meta {
+  font-size: 13px;
+  color: #6b5b46;
+  margin: 0 0 12px !important;
+}
+
+.booking-detail-shell .booking-detail-body {
+  padding-bottom: 4px;
+}
+
+.booking-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.booking-detail-pay {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a6314;
+  background: #e7f5d6;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+.booking-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px 20px;
+  margin-bottom: 18px;
+}
+
+.booking-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.booking-detail-row .k {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a7a65;
+}
+
+.booking-detail-row .v {
+  font-size: 14px;
+  color: #2f261b;
+  word-break: break-word;
+}
+
+.booking-detail-names-block h4,
+.booking-detail-itinerary h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b5b46;
+}
+
+.booking-detail-travelers {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #2f261b;
+}
+
+.booking-detail-travelers li {
+  margin: 4px 0;
+}
+
+.booking-detail-itinerary {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px dashed #e7dfd0;
+}
+
+.route-booking--interactive {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.route-booking--interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+
+.route-booking--interactive:focus-visible {
+  outline: 2px solid #ccff00;
+  outline-offset: 3px;
+}
+
 .wb-modal-card .muted {
   margin: 0 0 14px;
   color: #6b5b46;
@@ -1300,6 +1479,14 @@ body[data-page="previous"] .route-empty-neon-text {
 
 .trip-detail-modal .trip-detail-actions {
   margin-top: 18px;
+}
+
+.trip-detail-actions--wrap {
+  flex-wrap: wrap;
+}
+
+.trip-detail-actions--wrap .wb-primary {
+  flex: 1 1 160px;
 }
 
 .wb-modal-actions {
@@ -1598,7 +1785,60 @@ a.btn {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
   border-top: 1px dashed #e7dfd0;
+}
+
+.trip-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.btn-itinerary {
+  background: #fdf9f1;
+  color: #0d5c5c !important;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid #0d8a8a;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+
+.btn-itinerary:hover {
+  background: #e6f7f7;
+}
+
+.btn-itinerary:active {
+  transform: translateY(1px);
+}
+
+.btn-itinerary--modal {
+  flex: 1 1 auto;
+  min-width: 120px;
+}
+
+@media (max-width: 520px) {
+  .trip-card-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .trip-card-actions {
+    margin-left: 0;
+    justify-content: stretch;
+  }
+  .trip-card-actions .btn-book-now,
+  .trip-card-actions .btn-itinerary {
+    flex: 1;
+    justify-content: center;
+    text-align: center;
+  }
 }
 
 .trip-price {

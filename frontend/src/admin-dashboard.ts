@@ -55,10 +55,180 @@ function escapeHtml(raw: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function bookingTravelersSummary(booking: Record<string, unknown>): string {
+  const t = booking.travelers;
+  if (Array.isArray(t) && t.length) {
+    return t.map((x) => String(x)).join(" · ");
+  }
+  const parts: string[] = [];
+  if (booking.fullName) parts.push(String(booking.fullName));
+  for (let i = 2; i <= 20; i++) {
+    const v = booking[`traveler${i}`];
+    if (v) parts.push(String(v));
+  }
+  return parts.join(" · ");
+}
+
+let lastTripManageSearch = "";
+let lastTripManageRows: Array<Trip & { published?: boolean }> = [];
+
+function imageBasenameFromTripUrl(url?: string): string {
+  if (!url) return "";
+  const parts = url.split("/");
+  return parts[parts.length - 1] || "";
+}
+
+async function uploadTripItineraryPdf(tripId: string, file: File): Promise<void> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/admin/trips/${encodeURIComponent(tripId)}/itinerary`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+async function clearTripItineraryPdf(tripId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/trips/${encodeURIComponent(tripId)}/itinerary`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+async function deleteTripById(tripId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/trips/${encodeURIComponent(tripId)}`, {
+    method: "DELETE",
+    headers: authHeaders,
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+async function patchTrip(tripId: string, body: Record<string, unknown>): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/admin/trips/${encodeURIComponent(tripId)}`, {
+    method: "PATCH",
+    headers: authHeaders,
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await parseError(response));
+}
+
+function renderTripManageList(trips: Array<Trip & { published?: boolean }>): void {
+  const el = document.getElementById("tripManageList");
+  if (!el) return;
+  if (!trips.length) {
+    el.innerHTML = '<p class="empty-hint">No trips match this filter.</p>';
+    return;
+  }
+  el.innerHTML = trips
+    .map((trip) => {
+      const id = escapeHtml(String(trip._id));
+      const hasItin = Boolean((trip.itineraryHtml || "").trim().length);
+      const pub = trip.published !== false;
+      return `
+    <div class="trip-manage-row" data-trip-row="${id}">
+      <div class="trip-manage-main">
+        <strong>${escapeHtml(trip.title)}</strong>
+        <span class="trip-manage-meta">${escapeHtml(trip.location)} · ${escapeHtml(trip.durationLabel)} · ₹${Number(trip.price).toLocaleString("en-IN")}</span>
+        <span class="trip-manage-badges">
+          <span class="badge-itin ${hasItin ? "badge-itin--yes" : "badge-itin--no"}">${hasItin ? "PDF itinerary" : "No itinerary"}</span>
+          <span class="badge-itin ${pub ? "badge-pub--yes" : "badge-pub--no"}">${pub ? "Published" : "Hidden"}</span>
+        </span>
+      </div>
+      <div class="trip-manage-actions">
+        <button type="button" class="btn-second" data-edit-trip="${id}">Edit</button>
+        <label class="btn-second btn-file-label">
+          PDF
+          <input type="file" accept="application/pdf,.pdf" class="trip-itin-file" data-upload-itin="${id}" />
+        </label>
+        <button type="button" class="btn-second" data-clear-itin="${id}" ${hasItin ? "" : "disabled"}>Clear PDF</button>
+        <button type="button" class="btn-danger-outline" data-delete-trip="${id}">Delete</button>
+      </div>
+    </div>`;
+    })
+    .join("");
+}
+
+async function loadTripManageList(search = ""): Promise<void> {
+  const el = document.getElementById("tripManageList");
+  if (!el) return;
+  lastTripManageSearch = search;
+  el.innerHTML = '<p class="empty-hint">Loading…</p>';
+  try {
+    const data = await fetchJson(`${API_BASE_URL}/admin/trips?search=${encodeURIComponent(search)}`);
+    const trips = (data.trips || []) as Array<Trip & { published?: boolean }>;
+    lastTripManageRows = trips;
+    renderTripManageList(trips);
+  } catch (error) {
+    el.innerHTML = `<p class="error-text">${escapeHtml(error instanceof Error ? error.message : "Failed to load trips")}</p>`;
+  }
+}
+
+function openEditTripModal(trip: Trip & { published?: boolean }): void {
+  document.getElementById("tripEditModal")?.remove();
+  const id = String(trip._id);
+  const imageFile = imageBasenameFromTripUrl(trip.imageUrl);
+  const wrap = document.createElement("div");
+  wrap.id = "tripEditModal";
+  wrap.className = "admin-modal-overlay";
+  wrap.innerHTML = `
+    <div class="admin-modal" role="dialog" aria-modal="true">
+      <h3>Edit trip</h3>
+      <form id="tripEditForm" class="admin-modal-form">
+        <label>Title<input name="title" required value="${escapeHtml(trip.title)}" /></label>
+        <label>Location<input name="location" required value="${escapeHtml(trip.location)}" /></label>
+        <label>Duration<input name="duration_label" required value="${escapeHtml(trip.durationLabel)}" /></label>
+        <label>Price (₹)<input name="price" type="number" min="0" required value="${Number(trip.price)}" /></label>
+        <label>Start date<input name="start_date" type="date" required value="${escapeHtml(String(trip.startDate || "").slice(0, 10))}" /></label>
+        <label>End date<input name="end_date" type="date" required value="${escapeHtml(String((trip.endDate || trip.startDate) || "").slice(0, 10))}" /></label>
+        <label>Image file in assets/<input name="image_name" required value="${escapeHtml(imageFile)}" /></label>
+        <label class="checkbox-row"><input name="published" type="checkbox" ${trip.published !== false ? "checked" : ""} /> Published (show on website)</label>
+        <div class="admin-modal-actions">
+          <button type="button" class="btn-cancel" id="tripEditCancel">Cancel</button>
+          <button type="submit" class="form-submit" id="tripEditSave">Save</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(wrap);
+  const close = (): void => wrap.remove();
+  wrap.querySelector("#tripEditCancel")?.addEventListener("click", close);
+  wrap.addEventListener("click", (e) => {
+    if (e.target === wrap) close();
+  });
+  wrap.querySelector("#tripEditForm")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = ev.target as HTMLFormElement;
+    const fd = new FormData(f);
+    const body = {
+      title: String(fd.get("title") || "").trim(),
+      location: String(fd.get("location") || "").trim(),
+      duration_label: String(fd.get("duration_label") || "").trim(),
+      price: Number(fd.get("price")),
+      start_date: String(fd.get("start_date") || ""),
+      end_date: String(fd.get("end_date") || ""),
+      image_name: String(fd.get("image_name") || "").trim(),
+      published: fd.get("published") === "on",
+    };
+    const saveBtn = wrap.querySelector("#tripEditSave") as HTMLButtonElement;
+    saveBtn.disabled = true;
+    try {
+      await patchTrip(id, body);
+      close();
+      await loadTripManageList(lastTripManageSearch);
+      await loadTrips((document.getElementById("tripSearchInput") as HTMLInputElement)?.value?.trim() || "");
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+}
+
 const TAB_COPY: Record<string, readonly [string, string]> = {
   "stats-tab": ["Overview", "Payment confirmation overview and catalogue."],
   "bookings-tab": ["Booking details", "Search and review every reservation."],
-  "trips-tab": ["Add trip", "Publish a new packaged adventure to the catalogue."],
+  "trips-tab": ["Trips", "Add packages, upload PDF itineraries, edit or remove catalogue trips."],
 };
 
 function setActiveTab(tabId: string): void {
@@ -75,6 +245,7 @@ function setActiveTab(tabId: string): void {
     titleEl.textContent = copy[0];
     subEl.textContent = copy[1];
   }
+  if (tabId === "trips-tab") void loadTripManageList(lastTripManageSearch);
 }
 
 document.querySelectorAll(".sidebar-nav-btn").forEach((btn) => {
@@ -281,12 +452,13 @@ function renderRecentBookings(bookings: Array<Record<string, unknown>>): void {
       const badgeText = isDefined ? "Defined" : "Planned";
       const dest = escapeHtml(String(booking.travelDestination ?? ""));
       const name = escapeHtml(String(booking.fullName ?? ""));
+      const travelers = escapeHtml(bookingTravelersSummary(booking));
       const mobile = escapeHtml(String(booking.mobile ?? ""));
       return `
         <div class="recent-booking-row">
           <div>
             <strong>${dest}</strong>
-            <span class="meta">${name} · ${mobile}</span>
+            <span class="meta">${travelers || name} · ${mobile}</span>
           </div>
           <div class="meta">${new Date(String(booking.dateOfTravel ?? "")).toLocaleDateString()}</div>
           <div><span class="badge ${badgeClass}">${badgeText}</span> <span class="badge ${paymentBadgeClass(booking)}">${paymentBadgeText(booking)}</span></div>
@@ -315,6 +487,9 @@ function renderBookingList(bookings: Array<Record<string, unknown>>): void {
           <div>
             <h4>${escapeHtml(String(booking.travelDestination ?? ""))}</h4>
             <div class="booking-detail"><strong>Name:</strong> ${escapeHtml(String(booking.fullName ?? ""))}</div>
+            <div class="booking-detail"><strong>Travelers:</strong> ${escapeHtml(
+              bookingTravelersSummary(booking) || "—"
+            )}</div>
             <div class="booking-detail"><strong>Type:</strong> ${
               booking.tripType === "defined_trip" ? "Defined trip" : "Planned trip"
             }</div>
@@ -428,19 +603,30 @@ async function loadTrips(search = ""): Promise<void> {
       published: true,
     };
 
+    const pdfInput = document.getElementById("newTripItineraryPdf") as HTMLInputElement | null;
+    const pdfFile = pdfInput?.files?.[0] ?? null;
+
     const response = await fetch(`${API_BASE_URL}/admin/trips`, {
       method: "POST",
       headers: authHeaders,
       body: JSON.stringify(payload),
     });
 
-    if (!response.ok) throw new Error(await parseError(response));
+    const data = (await response.json().catch(() => ({}))) as { trip_id?: string; detail?: unknown };
+    if (!response.ok) throw new Error(await parseError(response, data));
+
+    if (pdfFile && data.trip_id) {
+      statusEl.textContent = "Uploading itinerary PDF…";
+      await uploadTripItineraryPdf(String(data.trip_id), pdfFile);
+    }
 
     statusEl.textContent = "Trip added successfully.";
     statusEl.className = "status-message success";
     (event.target as HTMLFormElement).reset();
+    if (pdfInput) pdfInput.value = "";
     await loadStats();
     await loadTrips();
+    await loadTripManageList(lastTripManageSearch);
     lastBookingSearch = "";
     const bookings = await fetchBookings("");
     renderBookingList(bookings);
@@ -472,6 +658,71 @@ async function loadTrips(search = ""): Promise<void> {
     window.alert(err instanceof Error ? err.message : "Could not confirm booking");
     trigger.disabled = false;
   }
+});
+
+document.getElementById("tripManageList")?.addEventListener("click", async (e) => {
+  const target = e.target as HTMLElement;
+  const editBtn = target.closest("[data-edit-trip]");
+  if (editBtn) {
+    const editId = editBtn.getAttribute("data-edit-trip");
+    if (editId) {
+      const trip = lastTripManageRows.find((x) => String(x._id) === editId);
+      if (trip) openEditTripModal(trip);
+    }
+    return;
+  }
+  const delBtn = target.closest("[data-delete-trip]");
+  if (delBtn) {
+    const delId = delBtn.getAttribute("data-delete-trip");
+    if (delId) {
+      if (!window.confirm("Delete this trip from the catalogue? Existing bookings keep their record.")) return;
+      try {
+        await deleteTripById(delId);
+        await loadTripManageList(lastTripManageSearch);
+        await loadTrips((document.getElementById("tripSearchInput") as HTMLInputElement)?.value?.trim() || "");
+        await loadStats();
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Delete failed");
+      }
+    }
+    return;
+  }
+  const clearBtn = target.closest("[data-clear-itin]");
+  if (clearBtn && clearBtn instanceof HTMLButtonElement && !clearBtn.disabled) {
+    const clearId = clearBtn.getAttribute("data-clear-itin");
+    if (clearId && window.confirm("Remove the PDF itinerary text from this trip?")) {
+      try {
+        await clearTripItineraryPdf(clearId);
+        await loadTripManageList(lastTripManageSearch);
+      } catch (err) {
+        window.alert(err instanceof Error ? err.message : "Could not clear itinerary");
+      }
+    }
+  }
+});
+
+document.getElementById("tripManageList")?.addEventListener("change", async (e) => {
+  const inp = e.target as HTMLInputElement;
+  if (!inp.classList.contains("trip-itin-file")) return;
+  const id = inp.getAttribute("data-upload-itin");
+  const file = inp.files?.[0];
+  inp.value = "";
+  if (!file || !id) return;
+  try {
+    await uploadTripItineraryPdf(id, file);
+    await loadTripManageList(lastTripManageSearch);
+  } catch (err) {
+    window.alert(err instanceof Error ? err.message : "Upload failed");
+  }
+});
+
+(document.getElementById("adminTripManageSearchBtn") as HTMLButtonElement | null)?.addEventListener("click", () => {
+  const q = (document.getElementById("adminTripManageSearch") as HTMLInputElement).value.trim();
+  void loadTripManageList(q);
+});
+
+(document.getElementById("adminTripManageSearch") as HTMLInputElement | null)?.addEventListener("keyup", (e) => {
+  if (e.key === "Enter") (document.getElementById("adminTripManageSearchBtn") as HTMLButtonElement).click();
 });
 
 document.addEventListener("DOMContentLoaded", async () => {

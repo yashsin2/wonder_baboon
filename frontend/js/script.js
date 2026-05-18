@@ -1,4 +1,5 @@
 import { API_BASE_URL, attachSmoothScroll, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
+import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
 const navLinks = document.querySelector(".nav-links");
@@ -76,21 +77,39 @@ function setupMobileMenu() {
         mobileMenuBtn.classList.toggle("active");
     });
 }
-function createWbModal(title, bodyHtml) {
+function createWbModal(title, bodyHtml, options) {
     const modal = document.createElement("div");
     modal.className = "wb-modal";
+    const cardClass = [
+        "wb-modal-card",
+        options?.wide ? "wb-modal-card--wide" : "",
+        options?.tall ? "wb-modal-card--tall" : "",
+    ]
+        .filter(Boolean)
+        .join(" ");
     modal.innerHTML = `
-    <div class="wb-modal-card">
-      <h3>${title}</h3>
+    <div class="${cardClass}">
+      <div class="wb-modal-head">
+        <h3>${title}</h3>
+        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
+      </div>
       ${bodyHtml}
     </div>
   `;
     document.body.appendChild(modal);
+    modal.querySelector(".wb-modal-close")?.addEventListener("click", () => modal.remove());
     modal.addEventListener("click", (event) => {
         if (event.target === modal)
             modal.remove();
     });
     return modal;
+}
+function openItineraryModal(trip) {
+    const html = getItineraryHtmlForTrip(trip);
+    if (!html)
+        return;
+    const safe = escapeHtml(trip.title);
+    createWbModal(`Itinerary · ${safe}`, `<div class="wb-modal-body-scroll itinerary-modal-body">${html}</div>`, { wide: true, tall: true });
 }
 function todayIso() {
     return new Date().toISOString().slice(0, 10);
@@ -118,13 +137,34 @@ function openBookingModal(trip) {
       <input id="bk_date" type="date" required value="${defaultDate}" min="${minDate}" />
       <label>Number of people *</label>
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
+      <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
       <div class="wb-modal-actions">
         <button type="button" class="wb-cancel" id="bk_cancel">Cancel</button>
         <button type="submit" class="wb-primary" id="bk_submit">Confirm booking</button>
       </div>
     </form>
   `;
-    const modal = createWbModal(`Book: ${trip.title}`, body);
+    const modal = createWbModal(`Book: ${escapeHtml(trip.title)}`, body);
+    const extrasWrap = modal.querySelector("#bk_extras_wrap");
+    const peopleEl = modal.querySelector("#bk_people");
+    const syncBookingExtras = () => {
+        if (!extrasWrap || !peopleEl)
+            return;
+        const n = Number(peopleEl.value);
+        const count = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 1;
+        const needExtras = Math.max(0, count - 1);
+        extrasWrap.innerHTML = "";
+        if (needExtras === 0)
+            return;
+        let html = "";
+        for (let i = 0; i < needExtras; i++) {
+            const num = i + 2;
+            html += `<label>Traveler ${num} full name *</label><input type="text" class="bk-extra-traveler" required minlength="2" autocomplete="name" />`;
+        }
+        extrasWrap.innerHTML = html;
+    };
+    syncBookingExtras();
+    peopleEl?.addEventListener("input", syncBookingExtras);
     modal.querySelector("#bk_cancel")?.addEventListener("click", () => modal.remove());
     modal.querySelector("#bk_form")?.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -138,6 +178,16 @@ function openBookingModal(trip) {
             showMessagePopup("Number of people must be at least 1", "error");
             return;
         }
+        const needExtras = Math.max(0, Math.min(19, people - 1));
+        const extraNames = Array.from(modal.querySelectorAll(".bk-extra-traveler")).map((el) => el.value.trim());
+        if (extraNames.length !== needExtras) {
+            showMessagePopup("Please fill every additional traveler's name.", "error");
+            return;
+        }
+        if (needExtras > 0 && extraNames.some((s) => s.length < 2)) {
+            showMessagePopup("Each traveler's name must be at least 2 characters.", "error");
+            return;
+        }
         const submitBtn = modal.querySelector("#bk_submit");
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -148,7 +198,12 @@ function openBookingModal(trip) {
                 const res = await fetch(`${API_BASE_URL}/bookings/user`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({ trip_id: trip._id, date_of_travel: date, number_of_people: people }),
+                    body: JSON.stringify({
+                        trip_id: trip._id,
+                        date_of_travel: date,
+                        number_of_people: people,
+                        additional_travelers: extraNames,
+                    }),
                 });
                 if (!res.ok)
                     throw new Error(await parseError(res));
@@ -176,6 +231,7 @@ function openBookingModal(trip) {
                         mobile,
                         email: email || null,
                         number_of_people: people,
+                        additional_travelers: extraNames,
                     }),
                 });
                 if (!res.ok)
@@ -193,6 +249,21 @@ function openBookingModal(trip) {
                 submitBtn.textContent = "Confirm booking";
             }
         }
+    });
+}
+function setupItineraryButtons() {
+    if (!tripsContainer)
+        return;
+    tripsContainer.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-itinerary-trip-id]");
+        if (!btn)
+            return;
+        event.preventDefault();
+        event.stopPropagation();
+        const id = btn.dataset.itineraryTripId || "";
+        const trip = allTrips.find((item) => item._id === id);
+        if (trip)
+            openItineraryModal(trip);
     });
 }
 function attachBookHandlers() {
@@ -243,13 +314,17 @@ function openTripDetailModal(trip) {
       <p class="muted">${location} · ${duration}</p>
       <p class="trip-detail-when">📅 ${when}</p>
       <p class="trip-detail-price">₹ ${price}</p>
-      <div class="wb-modal-actions trip-detail-actions">
+      <div class="wb-modal-actions trip-detail-actions ${tripHasItineraryForTrip(trip) ? "trip-detail-actions--wrap" : ""}">
+        ${tripHasItineraryForTrip(trip)
+        ? '<button type="button" class="btn-itinerary btn-itinerary--modal" id="td_itinerary">📋 Itinerary</button>'
+        : ""}
         <button type="button" class="wb-cancel" id="td_close">Close</button>
         <button type="button" class="wb-primary" id="td_book">Book this trip</button>
       </div>
     </div>
   `;
     const modal = createWbModal(safeTitle, body);
+    modal.querySelector("#td_itinerary")?.addEventListener("click", () => openItineraryModal(trip));
     modal.querySelector("#td_close")?.addEventListener("click", () => modal.remove());
     modal.querySelector("#td_book")?.addEventListener("click", () => {
         modal.remove();
@@ -274,7 +349,12 @@ function renderTripCard(trip) {
           </div>
           <div class="trip-card-foot">
             <div class="trip-price">₹ ${Number(trip.price).toLocaleString("en-IN")}</div>
-            <a href="#" class="btn-book-now" data-book>📞 Book Now</a>
+            <div class="trip-card-actions">
+              ${tripHasItineraryForTrip(trip)
+        ? `<button type="button" class="btn-itinerary" data-itinerary-trip-id="${escapeHtml(trip._id)}">📋 Itinerary</button>`
+        : ""}
+              <a href="#" class="btn-book-now" data-book>📞 Book Now</a>
+            </div>
           </div>
         </div>
       </article>
@@ -399,6 +479,7 @@ async function handlePlannedTrip() {
       <input id="plannedEmail" type="email" />
       <label>People *</label>
       <input id="plannedPeople" type="number" min="1" max="20" value="1" required />
+      <div id="planned_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
       <div class="wb-modal-actions">
         <button type="button" class="wb-cancel" id="planned_cancel">Cancel</button>
         <button type="submit" class="wb-primary" id="planned_submit">Submit</button>
@@ -406,6 +487,26 @@ async function handlePlannedTrip() {
     </form>
   `;
     const modal = createWbModal(`Plan trip to ${escapeHtml(destination)}`, body);
+    const plannedExtrasWrap = modal.querySelector("#planned_extras_wrap");
+    const plannedPeopleEl = modal.querySelector("#plannedPeople");
+    const syncPlannedExtras = () => {
+        if (!plannedExtrasWrap || !plannedPeopleEl)
+            return;
+        const n = Number(plannedPeopleEl.value);
+        const count = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 1;
+        const needExtras = Math.max(0, count - 1);
+        plannedExtrasWrap.innerHTML = "";
+        if (needExtras === 0)
+            return;
+        let html = "";
+        for (let i = 0; i < needExtras; i++) {
+            const num = i + 2;
+            html += `<label>Traveler ${num} full name *</label><input type="text" class="planned-extra-traveler" required minlength="2" autocomplete="name" />`;
+        }
+        plannedExtrasWrap.innerHTML = html;
+    };
+    syncPlannedExtras();
+    plannedPeopleEl?.addEventListener("input", syncPlannedExtras);
     modal.querySelector("#planned_cancel")?.addEventListener("click", () => modal.remove());
     modal.querySelector("#plannedTripForm")?.addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -413,6 +514,17 @@ async function handlePlannedTrip() {
         const mobile = modal.querySelector("#plannedMobile").value.trim();
         if (!name || !mobile) {
             showMessagePopup("Name and mobile are required", "error");
+            return;
+        }
+        const people = Number(modal.querySelector("#plannedPeople").value);
+        const needExtras = Math.max(0, Math.min(19, people - 1));
+        const extraNames = Array.from(modal.querySelectorAll(".planned-extra-traveler")).map((el) => el.value.trim());
+        if (extraNames.length !== needExtras) {
+            showMessagePopup("Please fill every additional traveler's name.", "error");
+            return;
+        }
+        if (needExtras > 0 && extraNames.some((s) => s.length < 2)) {
+            showMessagePopup("Each traveler's name must be at least 2 characters.", "error");
             return;
         }
         const submitBtn = modal.querySelector("#planned_submit");
@@ -430,7 +542,8 @@ async function handlePlannedTrip() {
                     full_name: name,
                     mobile,
                     email: modal.querySelector("#plannedEmail").value.trim() || null,
-                    number_of_people: Number(modal.querySelector("#plannedPeople").value),
+                    number_of_people: people,
+                    additional_travelers: extraNames,
                 }),
             });
             if (!response.ok)
@@ -512,7 +625,7 @@ function setupTripCardOpenDetail() {
         return;
     tripsContainer.addEventListener("click", (event) => {
         const target = event.target;
-        if (target.closest("[data-book]"))
+        if (target.closest("[data-book]") || target.closest("[data-itinerary-trip-id]"))
             return;
         const card = target.closest(".trip-card");
         if (!card?.dataset.id)
@@ -530,6 +643,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     attachSmoothScroll(document);
     setupParallax();
     setupTripCardOpenDetail();
+    setupItineraryButtons();
     await loadTrips();
     if (searchInput) {
         searchInput.addEventListener("input", () => filterTripsAndReveal({ scroll: false }));
