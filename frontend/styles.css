@@ -1205,10 +1205,13 @@ body[data-page="previous"] .route-empty-neon-text {
   inset: 0;
   background: rgba(15, 23, 42, 0.55);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   z-index: 3000;
-  padding: 16px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 16px max(12px, env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   animation: wbFadeIn 0.18s ease;
 }
 
@@ -1243,6 +1246,7 @@ body[data-page="previous"] .route-empty-neon-text {
   justify-content: space-between;
   gap: 12px;
   margin: 0 0 10px;
+  flex-shrink: 0;
 }
 
 .wb-modal-head h3 {
@@ -1278,7 +1282,10 @@ body[data-page="previous"] .route-empty-neon-text {
 }
 
 .wb-modal-card--tall {
+  /* Cap card height so the inner .wb-modal-body-scroll can scroll (flex min-height quirk). */
   max-height: min(92vh, 900px);
+  min-height: 0;
+  margin-block: auto;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1286,10 +1293,15 @@ body[data-page="previous"] .route-empty-neon-text {
 
 .wb-modal-body-scroll {
   overflow-y: auto;
-  flex: 1;
+  overflow-x: hidden;
+  flex: 1 1 auto;
   min-height: 0;
-  padding-right: 4px;
+  max-height: calc(90vh - 120px);
+  padding-right: 6px;
   margin-right: -4px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .itinerary-modal-body,
