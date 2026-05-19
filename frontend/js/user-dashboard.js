@@ -55,10 +55,17 @@ async function loadUserBookings() {
         function upcomingPaymentLine(booking) {
             const paid = booking.payment === "paid";
             const cls = paid ? "booking-payment booking-payment--confirmed" : "booking-payment booking-payment--pending";
-            const text = paid
-                ? "Booking confirmed."
-                : "Your booking will be confirmed after advance payment.";
-            return `<p class="${cls}">${text}</p>`;
+            if (paid) {
+                if (booking.packageTotalInr != null &&
+                    booking.advancePaymentInr != null &&
+                    booking.balanceDueInr != null) {
+                    const fmt = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+                    const text = `Booking confirmed — total ${fmt(booking.packageTotalInr)}, advance ${fmt(booking.advancePaymentInr)}, balance ${fmt(booking.balanceDueInr)}.`;
+                    return `<p class="${cls}">${text}</p>`;
+                }
+                return `<p class="${cls}">Booking confirmed.</p>`;
+            }
+            return `<p class="${cls}">Your booking will be confirmed once we record your advance payment.</p>`;
         }
         function createBookingCard(booking, opts) {
             const dest = escape(String(booking.travelDestination ?? ""));

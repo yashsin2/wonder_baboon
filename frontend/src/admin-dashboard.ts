@@ -47,6 +47,51 @@ function paymentBadgeText(booking: Record<string, unknown>): string {
   return bookingIsPaid(booking) ? "Paid" : "Unpaid";
 }
 
+/** Whole rupees; empty field → undefined */
+function parseRupeeField(raw: string): number | undefined {
+  const trimmed = raw.replace(/,/g, "").trim();
+  if (trimmed === "") return undefined;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) return undefined;
+  return n;
+}
+
+function syncBookingConfirmPanel(panel: HTMLElement): void {
+  const btn = panel.querySelector("[data-confirm-booking]");
+  const advanceEl = panel.querySelector<HTMLInputElement>("[data-advance-inr]");
+  if (!(btn instanceof HTMLButtonElement) || !advanceEl) return;
+
+  const hasCatalogTotal = panel.getAttribute("data-has-catalog-total") === "1";
+  const catalogAttr = Number(panel.getAttribute("data-catalog-total") ?? "");
+  const catalogTotal =
+    Number.isFinite(catalogAttr) && catalogAttr >= 1 ? Math.floor(catalogAttr) : undefined;
+
+  let packageTotal = hasCatalogTotal && catalogTotal !== undefined ? catalogTotal : undefined;
+  if (!hasCatalogTotal || catalogTotal === undefined) {
+    const tripEl = panel.querySelector<HTMLInputElement>("[data-trip-total]");
+    packageTotal = tripEl ? parseRupeeField(tripEl.value) : undefined;
+  }
+
+  const advance = parseRupeeField(advanceEl.value);
+  const preview = panel.querySelector("[data-balance-preview]");
+  if (preview) {
+    if (packageTotal !== undefined && advance !== undefined) {
+      const bal = packageTotal - advance;
+      preview.textContent =
+        bal >= 0 ? `Balance due: ₹${bal.toLocaleString("en-IN")}` : "Advance exceeds package total";
+    } else {
+      preview.textContent = "Balance due: —";
+    }
+  }
+
+  const valid =
+    packageTotal !== undefined &&
+    packageTotal >= 1 &&
+    advance !== undefined &&
+    advance <= packageTotal;
+  btn.disabled = !valid;
+}
+
 function escapeHtml(raw: string): string {
   return raw
     .replace(/&/g, "&amp;")
@@ -479,9 +524,50 @@ function renderBookingList(bookings: Array<Record<string, unknown>>): void {
     .map((booking) => {
       const id = escapeHtml(String(booking._id ?? ""));
       const paid = bookingIsPaid(booking);
-      const confirmBtn = paid
-        ? `<span class="booking-confirmed-label">Confirmed</span>`
-        : `<button type="button" class="btn-confirm-booking" data-confirm-booking="${id}">Confirm payment</button>`;
+      const breakdown =
+        bookingIsPaid(booking) && booking.packageTotalInr != null
+          ? `
+            <div class="booking-pay-history">
+              <span>Total ₹${Number(booking.packageTotalInr).toLocaleString("en-IN")}</span>
+              ·
+              <span>Advance ₹${Number(booking.advancePaymentInr ?? 0).toLocaleString("en-IN")}</span>
+              ·
+              <span>Balance ₹${Number(booking.balanceDueInr ?? 0).toLocaleString("en-IN")}</span>
+            </div>`
+          : "";
+      let confirmBlock = "";
+      if (paid) {
+        confirmBlock = `<span class="booking-confirmed-label">Confirmed</span>${breakdown}`;
+      } else {
+        const typed = booking as Record<string, unknown>;
+        const catalogRaw = typed.computedPackageTotalInr;
+        const catalogNum =
+          catalogRaw != null && catalogRaw !== "" ? Math.floor(Number(catalogRaw)) : NaN;
+        const defined = booking.tripType === "defined_trip";
+        const useCatalogPrice = defined && Number.isFinite(catalogNum) && catalogNum >= 1;
+        const totalRow = useCatalogPrice
+          ? `
+            <p class="booking-pkg-fixed">Catalogue total (${escapeHtml(
+              String(booking.numberOfPeople ?? 1)
+            )} × per-person)</p>
+            <p class="booking-pkg-amount"><strong>₹${catalogNum.toLocaleString("en-IN")}</strong></p>`
+          : `
+            <label class="booking-pay-field-label">Quoted package total (₹)<input type="number" inputmode="numeric" min="1" step="1" class="booking-pay-field" placeholder="Enter total due" data-trip-total /></label>`;
+
+        confirmBlock = `
+          <div
+            class="booking-pay-panel"
+            data-has-catalog-total="${useCatalogPrice ? "1" : "0"}"
+            data-catalog-total="${useCatalogPrice ? String(catalogNum) : ""}"
+          >
+            ${totalRow}
+            <label class="booking-pay-field-label">Advance received (₹)<input type="number" inputmode="numeric" min="0" step="1" class="booking-pay-field" placeholder="0" data-advance-inr /></label>
+            <p class="booking-balance-preview" data-balance-preview>Balance due: —</p>
+            <button type="button" class="btn-confirm-booking" data-confirm-booking="${id}" disabled>
+              Confirm booking
+            </button>
+          </div>`;
+      }
       return `
         <div class="booking-item">
           <div>
@@ -510,7 +596,7 @@ function renderBookingList(bookings: Array<Record<string, unknown>>): void {
               String(booking.createdAt ?? "")
             ).toLocaleDateString()}</div>
           </div>
-          <div class="booking-item-actions">${confirmBtn}</div>
+          <div class="booking-item-actions">${confirmBlock}</div>
         </div>
       `;
     })
@@ -637,16 +723,49 @@ async function loadTrips(search = ""): Promise<void> {
   }
 });
 
+(document.getElementById("bookingList") as HTMLElement).addEventListener(
+  "input",
+  (e) => {
+    const t = e.target as HTMLElement | null;
+    if (!t?.closest("[data-advance-inr], [data-trip-total]")) return;
+    const panel = t.closest(".booking-pay-panel");
+    if (panel instanceof HTMLElement) syncBookingConfirmPanel(panel);
+  },
+  true,
+);
+
 (document.getElementById("bookingList") as HTMLElement).addEventListener("click", async (e) => {
   const trigger = (e.target as HTMLElement).closest("[data-confirm-booking]");
   if (!trigger || !(trigger instanceof HTMLButtonElement)) return;
   const id = trigger.getAttribute("data-confirm-booking");
   if (!id || trigger.disabled) return;
+  const panel = trigger.closest(".booking-pay-panel");
+  const advanceEl = panel?.querySelector<HTMLInputElement>("[data-advance-inr]");
+  const advance = advanceEl ? parseRupeeField(advanceEl.value) : undefined;
+
+  let trip_total_inr: number | undefined;
+  if (panel?.getAttribute("data-has-catalog-total") !== "1") {
+    const tripEl = panel?.querySelector<HTMLInputElement>("[data-trip-total]");
+    trip_total_inr = tripEl ? parseRupeeField(tripEl.value) : undefined;
+    if (trip_total_inr === undefined) {
+      window.alert("Enter the quoted package total in rupees (whole amounts only).");
+      return;
+    }
+  }
+
+  if (advance === undefined) {
+    window.alert("Enter the advance payment received.");
+    return;
+  }
+
+  const payload: Record<string, unknown> = { booking_id: id, advance_payment_inr: advance };
+  if (trip_total_inr !== undefined) payload.trip_total_inr = trip_total_inr;
+
   trigger.disabled = true;
   try {
     await fetchJson(`${API_BASE_URL}/admin/bookings/confirm-payment`, {
       method: "POST",
-      body: JSON.stringify({ booking_id: id }),
+      body: JSON.stringify(payload),
     });
     await loadStats();
     const bookings = await fetchBookings(lastBookingSearch);
@@ -657,6 +776,7 @@ async function loadTrips(search = ""): Promise<void> {
   } catch (err) {
     window.alert(err instanceof Error ? err.message : "Could not confirm booking");
     trigger.disabled = false;
+    if (panel instanceof HTMLElement) syncBookingConfirmPanel(panel);
   }
 });
 

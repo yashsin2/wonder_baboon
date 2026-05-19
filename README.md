@@ -86,7 +86,6 @@ pip install -r requirements.txt
 
 ### 3. Configure Environment Variables
 
-Create/update `.env` file:
 
 ```
 MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority

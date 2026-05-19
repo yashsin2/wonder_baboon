@@ -1,0 +1,22 @@
+# Local MongoDB for Wonder Baboon (no Atlas required).
+#
+#   docker compose up -d
+#
+# Then in repo root `.env`:
+#   MONGO_URI=mongodb://127.0.0.1:27017/
+#
+# The app uses database name `userlogindetails` (see mongo_service.py).
+# Restart the API after Mongo is healthy: cd backend && python3 main.py
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: wb_mongodb_local
+    ports:
+      - "27017:27017"
+    volumes:
+      - wb_mongo_data:/data/db
+    restart: unless-stopped
+
+volumes:
+  wb_mongo_data:

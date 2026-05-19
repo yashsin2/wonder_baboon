@@ -206,7 +206,39 @@ class OtpVerifyRequest(BaseModel):
     return cleaned
 
 
-class AdminConfirmBookingRequest(BaseModel):
+class AdminConfirmPaymentFields(BaseModel):
+  """advance received + optional package override (planned trips or missing catalogue trip)."""
+
+  advance_payment_inr: int = Field(ge=0, le=99_999_999)
+  trip_total_inr: Optional[int] = Field(
+    default=None,
+    ge=1,
+    le=99_999_999,
+    description="Required for planned packages; ignored for catalogue trips when price is resolved.",
+  )
+
+  @field_validator("advance_payment_inr", "trip_total_inr", mode="before")
+  @classmethod
+  def coerce_int_optional(cls, value: object) -> object:
+    if value is None:
+      return None
+    if isinstance(value, bool):
+      raise ValueError("invalid amount")
+    if isinstance(value, int):
+      return value
+    if isinstance(value, float):
+      if value != int(value):
+        raise ValueError("amount must be a whole number (rupees)")
+      return int(value)
+    if isinstance(value, str):
+      s = value.strip().replace(",", "")
+      if not s:
+        raise ValueError("invalid amount")
+      return int(s)
+    raise ValueError("invalid amount")
+
+
+class AdminConfirmBookingRequest(AdminConfirmPaymentFields):
   booking_id: str = Field(min_length=1, max_length=64)
 
   @field_validator("booking_id")

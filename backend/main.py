@@ -14,6 +14,7 @@ from config import CORS_ORIGINS, HOST, IS_PRODUCTION, JWT_SECRET, PORT
 from logging_setup import configure_logging
 from models import (
   AdminConfirmBookingRequest,
+  AdminConfirmPaymentFields,
   AdminTripCreateRequest,
   AdminTripUpdateRequest,
   EmailOtpRequest,
@@ -38,6 +39,83 @@ configure_logging()
 logger = logging.getLogger("wb.main")
 
 
+def _inr_label(amount: int) -> str:
+  try:
+    n = int(amount)
+  except (TypeError, ValueError):
+    return "₹—"
+  return f"₹{n:,}"
+
+
+def _admin_confirm_booking_payment(
+  booking_id: str,
+  advance_payment_inr: int,
+  trip_total_override: Optional[int],
+) -> Dict[str, Any]:
+  cleaned_id = (booking_id or "").strip()
+  if not cleaned_id:
+    raise HTTPException(status_code=404, detail="booking not found")
+  booking = mongo_service.find_booking_by_id(cleaned_id)
+  if not booking:
+    raise HTTPException(status_code=404, detail="booking not found")
+  if booking.get("payment") == "paid":
+    raise HTTPException(status_code=400, detail="This booking is already confirmed.")
+
+  package_total = mongo_service.package_total_inr_for_booking(booking, trip_total_override)
+  if package_total is None:
+    raise HTTPException(
+      status_code=400,
+      detail="Enter the full package total (₹) before confirming planned trips—or when "
+      "this catalogue booking no longer has a published price.",
+    )
+  advance = int(advance_payment_inr)
+  if advance < 0:
+    raise HTTPException(status_code=400, detail="Advance payment cannot be negative.")
+  if advance > package_total:
+    raise HTTPException(
+      status_code=400,
+      detail=(
+        f"Advance ({_inr_label(advance)}) cannot exceed the package total ({_inr_label(package_total)})."
+      ),
+    )
+  balance = package_total - advance
+  ok = mongo_service.confirm_booking_with_payment_breakdown(cleaned_id, package_total, advance, balance)
+  if not ok:
+    raise HTTPException(status_code=404, detail="booking not found")
+
+  refreshed = mongo_service.find_booking_by_id(cleaned_id)
+  traveler_email = ""
+  if refreshed:
+    traveler_email = str(refreshed.get("email") or "").strip()
+
+  payload_for_mail = refreshed or booking
+  if traveler_email:
+    email_service.notify_booking_confirmed_traveler(
+      traveler_email,
+      payload_for_mail,
+      package_total_inr=package_total,
+      advance_payment_inr=advance,
+      balance_due_inr=balance,
+    )
+  else:
+    logger.warning("booking %s confirmed but traveler has no email; skipping confirmation mail", cleaned_id)
+
+  logger.info(
+    "admin confirmed booking id=%s total=%s advance=%s balance=%s",
+    cleaned_id,
+    package_total,
+    advance,
+    balance,
+  )
+  return {
+    "message": "booking confirmed",
+    "payment": "paid",
+    "package_total_inr": package_total,
+    "advance_payment_inr": advance,
+    "balance_due_inr": balance,
+  }
+
+
 def _traveler_document_fields(primary_name: str, additional: List[str]) -> Dict[str, Any]:
   """Ordered travelers + traveler1..travelerN for storage and emails."""
   primary = sanitize_text(str(primary_name).strip(), "full_name")
@@ -51,15 +129,44 @@ def _traveler_document_fields(primary_name: str, additional: List[str]) -> Dict[
   return out
 
 
+def _traveler_inbox_email(booking_doc: Dict[str, Any]) -> str:
+  raw = booking_doc.get("email")
+  if raw is None:
+    return ""
+  s = str(raw).strip().lower()
+  return s if s and "@" in s else ""
+
+
+def _notify_booking_created(doc: Dict[str, Any]) -> None:
+  """Ops alert + traveller acknowledgement (pending advance)."""
+  email_service.notify_new_booking(doc)
+  inbox = _traveler_inbox_email(doc)
+  if inbox:
+    estimate = mongo_service.package_total_inr_for_booking(doc, None)
+    email_service.notify_booking_pending_traveler(inbox, doc, package_total_inr=estimate)
+
+
 app = FastAPI(title="Wonder Baboon API")
 
-app.add_middleware(
-  CORSMiddleware,
+_cors_kw: Dict[str, Any] = dict(
   allow_origins=CORS_ORIGINS,
   allow_credentials=True,
   allow_methods=["*"],
   allow_headers=["*"],
 )
+if not IS_PRODUCTION:
+  _cors_kw["allow_origin_regex"] = (
+    r"^https?://"  # http:// or https://
+    r"("
+    r"192\.168\.\d{1,3}\.\d{1,3}|"  # 192.168.0.0/16
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"  # 10.0.0.0/8
+    r"172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|"  # 172.16–31.x.x
+    r"localhost|127\.0\.0\.1"
+    r")"
+    r"(:\d+)?$"  # optional port
+  )
+
+app.add_middleware(CORSMiddleware, **_cors_kw)
 
 
 @app.middleware("http")
@@ -209,7 +316,7 @@ def guest_booking(payload: GuestBookingRequest):
     **tfields,
   }
   mongo_service.insert_booking(doc)
-  email_service.notify_new_booking(doc)
+  _notify_booking_created(doc)
   logger.info("guest booking trip=%s email=%s", payload.travel_destination, payload.email)
   return {"message": "booking saved"}
 
@@ -281,7 +388,7 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
     **tfields,
   }
   mongo_service.insert_booking(doc)
-  email_service.notify_new_booking(doc)
+  _notify_booking_created(doc)
   logger.info(
     "user booking trip=%s email=%s date=%s people=%s",
     trip.get("title"),
@@ -409,7 +516,7 @@ def planned_trip(payload: PlannedTripRequest):
     **tfields,
   }
   mongo_service.insert_booking(doc)
-  email_service.notify_new_booking(doc)
+  _notify_booking_created(doc)
   logger.info("planned trip dest=%s email=%s", payload.travel_destination, payload.email)
   return {"message": "planned trip saved"}
 
@@ -425,19 +532,21 @@ def admin_bookings(search: str = "", _: dict = Depends(require_admin)):
 
 
 @app.patch("/api/admin/bookings/{booking_id}/confirm")
-def admin_confirm_booking(booking_id: str, _: dict = Depends(require_admin)):
-  ok = mongo_service.set_booking_payment_paid(booking_id)
-  if not ok:
-    raise HTTPException(status_code=404, detail="booking not found")
-  return {"message": "booking confirmed", "payment": "paid"}
+def admin_confirm_booking(booking_id: str, payload: AdminConfirmPaymentFields, _: dict = Depends(require_admin)):
+  return _admin_confirm_booking_payment(
+    booking_id,
+    payload.advance_payment_inr,
+    payload.trip_total_inr,
+  )
 
 
 @app.post("/api/admin/bookings/confirm-payment")
 def admin_confirm_booking_post(payload: AdminConfirmBookingRequest, _: dict = Depends(require_admin)):
-  ok = mongo_service.set_booking_payment_paid(payload.booking_id)
-  if not ok:
-    raise HTTPException(status_code=404, detail="booking not found")
-  return {"message": "booking confirmed", "payment": "paid"}
+  return _admin_confirm_booking_payment(
+    payload.booking_id,
+    payload.advance_payment_inr,
+    payload.trip_total_inr,
+  )
 
 
 @app.get("/api/admin/trips")

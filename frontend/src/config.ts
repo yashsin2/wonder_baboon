@@ -5,11 +5,26 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", ""]);
 const PRODUCTION_WEB_HOSTS = new Set(["wonderbaboon.com", "www.wonderbaboon.com"]);
 const PUBLIC_API_BASE = "https://api.wonderbaboon.com/api";
 
+/** e.g. open site at http://192.168.1.10:3000 — API on same machine at :5051 */
+function isPrivateLanIPv4(hostname: string): boolean {
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) return false;
+  const parts = hostname.split(".").map((p) => Number(p));
+  if (parts.length !== 4 || parts.some((n) => n > 255)) return false;
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b !== undefined && b >= 16 && b <= 31) return true;
+  return false;
+}
+
 function resolveApiBase(): string {
   if (ENV_API_BASE) return ENV_API_BASE.replace(/\/$/, "");
   const { protocol, hostname } = window.location;
   if (LOCAL_HOSTS.has(hostname)) {
     return "http://localhost:5051/api";
+  }
+  if (isPrivateLanIPv4(hostname)) {
+    return `${protocol}//${hostname}:5051/api`;
   }
   if (PRODUCTION_WEB_HOSTS.has(hostname) || SERVER_HOSTS.has(hostname)) {
     return PUBLIC_API_BASE;
@@ -62,6 +77,10 @@ export interface Booking {
   itineraryHtml?: string;
   /** Admin-settlement; unset treated as unpaid for user messaging */
   payment?: string;
+  /** Filled after admin confirms with advance + totals */
+  packageTotalInr?: number;
+  advancePaymentInr?: number;
+  balanceDueInr?: number;
 }
 
 export function getSession(): { token: string | null; user: SessionUser | null } {

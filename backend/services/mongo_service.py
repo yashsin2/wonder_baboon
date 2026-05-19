@@ -259,9 +259,71 @@ class MongoService:
       logger.warning("backfill booking payment skipped: %s", exc)
 
   def insert_booking(self, doc: dict) -> None:
-    self.user_trip_collection.insert_one(doc)
+    result = self.user_trip_collection.insert_one(doc)
+    doc["_id"] = result.inserted_id
+
+  def find_booking_by_id(self, booking_id: str) -> Optional[dict]:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return None
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    return self.user_trip_collection.find_one({"$or": id_clauses})
+
+  def package_total_inr_for_booking(self, booking: dict, trip_total_override: Optional[int]) -> Optional[int]:
+    """Catalogue trip: price × headcount; planned trip: requires admin override."""
+    people = max(1, int(booking.get("numberOfPeople") or 1))
+    if booking.get("tripType") == "defined_trip" and booking.get("tripId"):
+      trip = self.find_trip_by_id(str(booking["tripId"]))
+      if trip and trip.get("price") is not None:
+        try:
+          return int(trip["price"]) * people
+        except (TypeError, ValueError):
+          pass
+      if trip_total_override is None:
+        return None
+      return trip_total_override
+    if booking.get("tripType") == "planned_trip":
+      if trip_total_override is None:
+        return None
+      return trip_total_override
+    if trip_total_override is not None:
+      return trip_total_override
+    return None
+
+  def confirm_booking_with_payment_breakdown(
+    self,
+    booking_id: str,
+    package_total_inr: int,
+    advance_payment_inr: int,
+    balance_due_inr: int,
+  ) -> bool:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    now = datetime.utcnow()
+    update = {
+      "$set": {
+        "payment": "paid",
+        "confirmedAt": now,
+        "packageTotalInr": int(package_total_inr),
+        "advancePaymentInr": int(advance_payment_inr),
+        "balanceDueInr": int(balance_due_inr),
+      }
+    }
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one({"$or": id_clauses}, update)
+    return result.matched_count > 0
 
   def set_booking_payment_paid(self, booking_id: str) -> bool:
+    """Legacy: marks paid without payment breakdown (prefer confirm_booking_with_payment_breakdown)."""
     raw = (booking_id or "").strip()
     if not raw:
       return False
@@ -421,6 +483,9 @@ class MongoService:
     bookings = list(self.user_trip_collection.find(query).sort("createdAt", DESCENDING))
     for booking in bookings:
       booking["_id"] = str(booking["_id"])
+      total = self.package_total_inr_for_booking(booking, None)
+      if total is not None:
+        booking["computedPackageTotalInr"] = total
     return bookings
 
   def search_trips(self, search: str) -> List[dict]:

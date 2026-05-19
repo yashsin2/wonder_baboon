@@ -511,7 +511,7 @@ body.admin-page {
   box-shadow: var(--adm-shadow);
   padding: 18px 20px;
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(140px, 180px);
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(200px, 260px);
   gap: 16px 20px;
   align-items: start;
 }
@@ -522,6 +522,64 @@ body.admin-page {
   align-items: stretch;
   justify-content: flex-start;
   gap: 8px;
+}
+
+.booking-pay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.booking-pay-field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--adm-muted);
+}
+
+.booking-pay-field {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--adm-border);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.booking-pay-field:focus {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  border-color: var(--adm-accent);
+}
+
+.booking-pkg-fixed {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--adm-muted);
+}
+
+.booking-pkg-amount {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--adm-text);
+}
+
+.booking-balance-preview {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.booking-pay-history {
+  margin-top: 8px;
+  font-size: 0.74rem;
+  color: var(--adm-muted);
+  line-height: 1.35;
 }
 
 .btn-confirm-booking {
