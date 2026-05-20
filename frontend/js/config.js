@@ -36,6 +36,15 @@ function resolveApiBase() {
     return `${protocol}//${hostname}/api`;
 }
 export const API_BASE_URL = resolveApiBase();
+/** Canonical paths (no .html) — use for links and redirects */
+export const ROUTES = {
+    home: "/",
+    auth: "/auth",
+    upcoming: "/upcoming-trips",
+    previous: "/previous-trips",
+    settings: "/settings",
+    admin: "/admin-dashboard",
+};
 export const logger = {
     info: (...args) => console.info("[wb]", ...args),
     warn: (...args) => console.warn("[wb]", ...args),

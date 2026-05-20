@@ -1,6 +1,7 @@
 import {
   clearSession,
   getSession,
+  ROUTES,
   showSuccessModal,
 } from "./config.js";
 
@@ -30,11 +31,11 @@ function renderFooter(): void {
       clearSession();
       showSuccessModal("Logged out", "See you on the next adventure!");
       setTimeout(() => {
-        window.location.href = "./index.html";
+        window.location.href = ROUTES.home;
       }, 800);
     });
   } else {
-    footerEl.innerHTML = `<a href="./auth.html" id="panelLoginBtn" class="up-footer-btn up-login-btn">Login / Sign up</a>`;
+    footerEl.innerHTML = `<a href="${ROUTES.auth}" id="panelLoginBtn" class="up-footer-btn up-login-btn">Login / Sign up</a>`;
   }
 }
 

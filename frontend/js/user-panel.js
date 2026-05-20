@@ -1,4 +1,4 @@
-import { clearSession, getSession, showSuccessModal, } from "./config.js";
+import { clearSession, getSession, ROUTES, showSuccessModal, } from "./config.js";
 const panel = document.getElementById("userPanel");
 const greetingEl = document.getElementById("panelGreeting");
 const titleEl = document.getElementById("panelTitle");
@@ -29,12 +29,12 @@ function renderFooter() {
             clearSession();
             showSuccessModal("Logged out", "See you on the next adventure!");
             setTimeout(() => {
-                window.location.href = "./index.html";
+                window.location.href = ROUTES.home;
             }, 800);
         });
     }
     else {
-        footerEl.innerHTML = `<a href="./auth.html" id="panelLoginBtn" class="up-footer-btn up-login-btn">Login / Sign up</a>`;
+        footerEl.innerHTML = `<a href="${ROUTES.auth}" id="panelLoginBtn" class="up-footer-btn up-login-btn">Login / Sign up</a>`;
     }
 }
 function highlightActiveNav() {

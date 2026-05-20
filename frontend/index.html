@@ -3,6 +3,12 @@
 <head>
   <script>
   (function () {
+    var p = location.pathname;
+    if (p === "/index.html" || /\/index\.html$/i.test(p)) {
+      history.replaceState(null, "", "/" + location.search + location.hash);
+    } else if (/\.html$/i.test(p)) {
+      history.replaceState(null, "", p.replace(/\.html$/i, "") + location.search + location.hash);
+    }
     var h = location.hostname;
     if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
       window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";
@@ -36,7 +42,7 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 
   <header class="site-header">
   <div class="header-container">
-    <a class="logo" href="./index.html">
+    <a class="logo" href="/">
       <img src="./assets/logo.png" alt="Wonder Baboon Logo">
       <div class="logo-text-block">
         <span class="logo-text">Wonder Baboon</span>
@@ -76,26 +82,26 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
     </header>
 
     <nav class="up-nav" data-panel-nav>
-      <a class="up-nav-item" href="./index.html" data-page="home">
+      <a class="up-nav-item" href="/" data-page="home">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H10v6H4a1 1 0 0 1-1-1v-8.5z"/></svg></span>
         <span>Home</span>
       </a>
-      <a class="up-nav-item" href="./upcoming-trips.html" data-page="upcoming">
+      <a class="up-nav-item" href="/upcoming-trips" data-page="upcoming">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
         <span>Your trips</span>
       </a>
-      <a class="up-nav-item" href="./previous-trips.html" data-page="previous">
+      <a class="up-nav-item" href="/previous-trips" data-page="previous">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
         <span>Previous Trips</span>
       </a>
-      <a class="up-nav-item" href="./settings.html" data-page="settings">
+      <a class="up-nav-item" href="/settings" data-page="settings">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.15.68.4.95.71"/></svg></span>
         <span>Settings</span>
       </a>
     </nav>
 
     <footer class="user-panel-foot" id="userPanelFoot">
-      <a href="./auth.html" class="up-footer-btn up-login-btn" id="panelLoginBtn">Login / Sign up</a>
+      <a href="/auth" class="up-footer-btn up-login-btn" id="panelLoginBtn">Login / Sign up</a>
     </footer>
   </div>
 </aside>

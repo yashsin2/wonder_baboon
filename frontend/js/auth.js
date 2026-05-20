@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError, saveSession } from "./config.js";
+import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js";
 const statusEl = document.getElementById("authStatus");
 function showStatus(message, ok = false) {
     statusEl.textContent = message;
@@ -44,7 +44,7 @@ document.getElementById("signupForm").addEventListener("submit", async (event) =
         saveSession(data.token, data.user);
         showStatus("Account created! Redirecting to your dashboard...", true);
         setTimeout(() => {
-            window.location.href = "./user-dashboard.html";
+            window.location.href = ROUTES.upcoming;
         }, 900);
     }
     catch (error) {
@@ -68,12 +68,12 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
             throw new Error(await parseError(response, data));
         saveSession(data.token, data.user);
         if (data.user.role === "admin") {
-            window.location.href = "./admin-dashboard.html";
+            window.location.href = ROUTES.admin;
             return;
         }
         showStatus("Logged in! Opening your dashboard...", true);
         setTimeout(() => {
-            window.location.href = "./user-dashboard.html";
+            window.location.href = ROUTES.upcoming;
         }, 700);
     }
     catch (error) {
@@ -85,5 +85,5 @@ const token = localStorage.getItem("wb_token");
 const userRaw = localStorage.getItem("wb_user");
 if (token && userRaw) {
     const user = JSON.parse(userRaw);
-    window.location.href = user.role === "admin" ? "./admin-dashboard.html" : "./user-dashboard.html";
+    window.location.href = user.role === "admin" ? ROUTES.admin : ROUTES.upcoming;
 }

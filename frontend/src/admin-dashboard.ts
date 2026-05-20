@@ -1,9 +1,9 @@
-import { API_BASE_URL, getSession, parseError, Trip } from "./config.js";
+import { API_BASE_URL, getSession, parseError, ROUTES, Trip } from "./config.js";
 
 const { token, user } = getSession();
 
 if (!token || !user || user.role !== "admin") {
-  window.location.href = "./auth.html";
+  window.location.href = ROUTES.auth;
 }
 
 const authHeaders = {
@@ -303,7 +303,7 @@ document.querySelectorAll(".sidebar-nav-btn").forEach((btn) => {
 (document.getElementById("logoutBtn") as HTMLButtonElement).addEventListener("click", () => {
   localStorage.removeItem("wb_token");
   localStorage.removeItem("wb_user");
-  window.location.href = "./index.html";
+  window.location.href = ROUTES.home;
 });
 
 async function fetchJson(url: string, options: RequestInit = {}): Promise<Record<string, unknown>> {

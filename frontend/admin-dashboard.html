@@ -3,6 +3,12 @@
 <head>
   <script>
   (function () {
+    var p = location.pathname;
+    if (p === "/index.html" || /\/index\.html$/i.test(p)) {
+      history.replaceState(null, "", "/" + location.search + location.hash);
+    } else if (/\.html$/i.test(p)) {
+      history.replaceState(null, "", p.replace(/\.html$/i, "") + location.search + location.hash);
+    }
     var h = location.hostname;
     if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
       window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";

@@ -17,7 +17,7 @@ function loginPrompt(message) {
     return `
     <div class="route-empty">
       <p>${message}</p>
-      <a href="./auth.html" class="route-empty-cta">Login or sign up</a>
+      <a href="/auth" class="route-empty-cta">Login or sign up</a>
     </div>`;
 }
 function escapeHtml(raw) {
@@ -223,7 +223,7 @@ async function mountSettingsPage() {
         document.getElementById("changeMobile")?.addEventListener("click", () => void startChangeMobile());
         document.getElementById("signOut")?.addEventListener("click", () => {
             clearSession();
-            window.location.href = "./index.html";
+            window.location.href = "/";
         });
     }
     catch (error) {

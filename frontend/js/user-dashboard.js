@@ -1,7 +1,7 @@
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError } from "./config.js";
+import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "user") {
-    window.location.href = "./auth.html";
+    window.location.href = ROUTES.auth;
 }
 const authHeaders = {
     "Content-Type": "application/json",
@@ -9,7 +9,7 @@ const authHeaders = {
 };
 document.getElementById("logoutBtn").addEventListener("click", () => {
     clearSession();
-    window.location.href = "./index.html";
+    window.location.href = ROUTES.home;
 });
 function setAvatarInitials(name) {
     const initials = name
