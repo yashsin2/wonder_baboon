@@ -1,0 +1,25 @@
+# Wonder Baboon — clean URLs on Apache/LiteSpeed (Hostinger shared hosting)
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Legacy dashboard → Your trips (before generic .html redirects)
+  RewriteRule ^user-dashboard\.html$ /upcoming-trips [R=301,L,NC]
+  RewriteRule ^user-dashboard/?$ /upcoming-trips [R=301,L,NC]
+
+  # External request: /page.html → /page (301, keeps bookmarks working)
+  RewriteCond %{THE_REQUEST} \s/+index\.html[\s?] [NC]
+  RewriteRule ^index\.html$ / [R=301,L]
+
+  RewriteCond %{THE_REQUEST} \s/+(.+?)\.html[\s?] [NC]
+  RewriteRule ^ %1 [R=301,L]
+
+  # Internal: /page → page.html (address bar stays clean)
+  RewriteRule ^upcoming-trips/?$ upcoming-trips.html [L,NC]
+  RewriteRule ^previous-trips/?$ previous-trips.html [L,NC]
+  RewriteRule ^settings/?$ settings.html [L,NC]
+  RewriteRule ^auth/?$ auth.html [L,NC]
+  RewriteRule ^admin-dashboard/?$ admin-dashboard.html [L,NC]
+</IfModule>
+
+DirectoryIndex index.html
