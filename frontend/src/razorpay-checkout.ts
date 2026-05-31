@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError } from "./config.js";
+import { API_BASE_URL, parseError, showSuccessModal } from "./config.js";
 
 declare global {
   interface Window {
@@ -54,10 +54,21 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export type PaymentResumeContext = {
+  bookingId: string;
+  contact: { name?: string; email?: string; mobile?: string };
+  tripTitle: string;
+  travelDate: string;
+};
+
 /** Centered modal for payment incomplete / failed (not a full-width red toast). */
 export function showPaymentIncompleteModal(
   refundDays = 12,
-  options?: { providerError?: string; cancelled?: boolean }
+  options?: {
+    providerError?: string;
+    cancelled?: boolean;
+    resume?: PaymentResumeContext;
+  }
 ): void {
   document.getElementById("wbPayAlertModal")?.remove();
   const providerError = (options?.providerError || "").trim();
@@ -84,7 +95,8 @@ export function showPaymentIncompleteModal(
         <li>${escapeHtml(advanceRefundPolicyText(refundDays))}</li>
       </ul>
       <div class="wb-modal-actions">
-        <button type="button" class="wb-primary" id="wbPayAlertOk">Got it</button>
+        ${options?.resume?.bookingId ? `<button type="button" class="wb-primary" id="wbPayAlertRetry">Retry payment</button>` : ""}
+        <button type="button" class="${options?.resume?.bookingId ? "wb-cancel" : "wb-primary"}" id="wbPayAlertOk">Got it</button>
       </div>
     </div>
   `;
@@ -94,6 +106,28 @@ export function showPaymentIncompleteModal(
   wrap.querySelector("#wbPayAlertOk")?.addEventListener("click", close);
   wrap.addEventListener("click", (event) => {
     if (event.target === wrap) close();
+  });
+  const resume = options?.resume;
+  wrap.querySelector("#wbPayAlertRetry")?.addEventListener("click", () => {
+    if (!resume?.bookingId) return;
+    close();
+    void (async () => {
+      try {
+        const { message } = await completeBookingWithOptionalRazorpay(
+          {
+            booking_id: resume.bookingId,
+            razorpay_enabled: true,
+            advance_refund_days: refundDays,
+          },
+          resume.contact,
+          resume.tripTitle,
+          resume.travelDate
+        );
+        showSuccessModal("Booking confirmed", message);
+      } catch (err) {
+        handlePaymentFlowError(err, refundDays, resume);
+      }
+    })();
   });
 }
 
@@ -209,6 +243,7 @@ export async function payAdvanceForBooking(
   }
 
   hooks?.onAwaitingPayment?.();
+  document.body.classList.add("wb-razorpay-checkout");
 
   return new Promise((resolve, reject) => {
     if (!window.Razorpay) {
@@ -251,7 +286,7 @@ export async function payAdvanceForBooking(
       prefill: {
         name: contact.name || "",
         email: contact.email || "",
-        contact: contact.mobile || "",
+        contact: (contact.mobile || "").replace(/\D/g, "").slice(-10),
       },
       theme: { color: "#c4e538" },
     };
@@ -309,7 +344,11 @@ export async function payAdvanceForBooking(
   });
 }
 
-export function handlePaymentFlowError(error: unknown, refundDays = 12): void {
+export function handlePaymentFlowError(
+  error: unknown,
+  refundDays = 12,
+  resume?: PaymentResumeContext
+): void {
   const message = error instanceof Error ? error.message : "Payment could not be completed";
   const cancelled =
     error instanceof Error && (error as Error & { cancelled?: boolean }).cancelled === true;
@@ -338,6 +377,7 @@ export function handlePaymentFlowError(error: unknown, refundDays = 12): void {
   showPaymentIncompleteModal(refundDays, {
     cancelled: cancelled && !providerSetup && !paymentFailed && !verifyFailed,
     providerError,
+    resume: resume?.bookingId ? resume : undefined,
   });
 }
 

@@ -344,7 +344,19 @@ function openBookingModal(trip: Trip): void {
           showSuccessModal("Booking confirmed", message);
         } catch (payError) {
           modal.remove();
-          handlePaymentFlowError(payError, refundDays);
+          const bookingId = (saved.booking_id || "").trim();
+          handlePaymentFlowError(
+            payError,
+            refundDays,
+            bookingId
+              ? {
+                  bookingId,
+                  contact,
+                  tripTitle: trip.title,
+                  travelDate: date,
+                }
+              : undefined
+          );
           logger.warn("advance payment not completed", payError);
         }
       } else {

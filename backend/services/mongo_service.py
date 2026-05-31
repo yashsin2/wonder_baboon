@@ -579,6 +579,16 @@ class MongoService:
       pass
     self.user_trip_collection.update_one({"$or": id_clauses}, update)
 
+  @staticmethod
+  def booking_visible_to_traveler(booking: dict) -> bool:
+    """Unpaid online-advance bookings stay in DB for admin but not on Your trips."""
+    payment = str(booking.get("payment") or "unpaid").strip().lower()
+    if payment in ("advance_paid", "paid"):
+      return True
+    if booking.get("confirmed") is True:
+      return True
+    return False
+
   def list_user_bookings(self, email: str, mobile: Optional[str] = None) -> List[dict]:
     clauses: List[Dict[str, Any]] = [{"email": email}]
     m = (mobile or "").strip()
@@ -586,15 +596,19 @@ class MongoService:
       clauses.append({"mobile": m})
     query: Dict[str, Any] = {"$or": clauses} if len(clauses) > 1 else clauses[0]
     bookings = list(self.user_trip_collection.find(query).sort("dateOfTravel", DESCENDING))
+    visible: List[dict] = []
     for booking in bookings:
       booking["_id"] = str(booking["_id"])
+      self._sync_booking_payment_status(booking)
+      if not self.booking_visible_to_traveler(booking):
+        continue
       tid = booking.get("tripId")
       if tid:
         trip = self.find_trip_by_id(str(tid))
         if trip and trip.get("itineraryHtml"):
           booking["itineraryHtml"] = trip["itineraryHtml"]
-      self._sync_booking_payment_status(booking)
-    return bookings
+      visible.append(booking)
+    return visible
 
   def get_admin_stats(self) -> Dict[str, Any]:
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)

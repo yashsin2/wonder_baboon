@@ -3343,6 +3343,12 @@ footer {
   margin-top: 8px;
 }
 
+/* Razorpay checkout must sit above site modals (booking modal is z-index 3000). */
+body.wb-razorpay-checkout .wb-modal {
+  z-index: 100;
+  pointer-events: none;
+}
+
 /* Notification System — short toasts only */
 .notification {
   position: fixed;

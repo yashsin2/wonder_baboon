@@ -52,6 +52,7 @@ from services.razorpay_service import (
   compute_advance_inr,
   create_order as razorpay_create_order,
   razorpay_enabled,
+  reset_client as razorpay_reset_client,
   verify_payment_signature,
 )
 
@@ -410,6 +411,9 @@ async def mongo_runtime_error_handler(_: Request, exc: RuntimeError):
 @app.on_event("startup")
 def startup_event() -> None:
   logger.info("Starting Wonder Baboon API (production=%s)", IS_PRODUCTION)
+  if razorpay_enabled():
+    razorpay_reset_client()
+    logger.info("Razorpay enabled key_id=%s", RAZORPAY_KEY_ID[:16] + "…" if RAZORPAY_KEY_ID else "")
   try:
     mongo_service.connect()
     if mongo_service.is_connected():
