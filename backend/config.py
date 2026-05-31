@@ -72,3 +72,15 @@ OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))
 OTP_RATE_LIMIT_SECONDS = int(os.getenv("OTP_RATE_LIMIT_SECONDS", "60"))
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+RAZORPAY_KEY_ID = (os.getenv("RAZORPAY_KEY_ID") or "").strip()
+RAZORPAY_KEY_SECRET = (os.getenv("RAZORPAY_KEY_SECRET") or "").strip()
+try:
+  RAZORPAY_ADVANCE_PERCENT = int(os.getenv("RAZORPAY_ADVANCE_PERCENT", "30"))
+except ValueError:
+  RAZORPAY_ADVANCE_PERCENT = 30
+
+try:
+  RAZORPAY_ADVANCE_REFUND_DAYS = int(os.getenv("RAZORPAY_ADVANCE_REFUND_DAYS", "12"))
+except ValueError:
+  RAZORPAY_ADVANCE_REFUND_DAYS = 12

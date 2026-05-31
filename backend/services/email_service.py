@@ -666,15 +666,20 @@ class EmailService:
     if not ok:
       logger.error("Traveler pending-booking email failed: %s", err)
 
-  def notify_new_booking(self, doc: Dict[str, Any]) -> None:
+  def notify_new_booking(self, doc: Dict[str, Any], *, payment_pending: bool = False) -> None:
     """Alert ops inbox when a booking is saved. Failures are logged only (booking already persisted)."""
     if not BOOKING_NOTIFY_EMAIL:
       return
     dest = str(doc.get("travelDestination") or "Trip")
     travel_date = str(doc.get("dateOfTravel") or "")
-    subject = f"[Wonder Baboon] New booking — {dest} ({travel_date})"
+    if payment_pending:
+      subject = f"[Wonder Baboon] Booking started — advance payment pending — {dest} ({travel_date})"
+      headline = "Someone started a booking and opened advance payment (not confirmed until paid)."
+    else:
+      subject = f"[Wonder Baboon] New booking — {dest} ({travel_date})"
+      headline = "A new booking was submitted on Wonder Baboon."
     lines = [
-      "A new booking was submitted on Wonder Baboon.",
+      headline,
       "",
       f"Booking ID:     {str(doc.get('_id')) if doc.get('_id') is not None else '—'}",
       f"Trip type:      {doc.get('tripType')}",

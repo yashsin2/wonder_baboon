@@ -276,9 +276,54 @@ class MongoService:
     except PyMongoError as exc:
       logger.warning("backfill booking payment skipped: %s", exc)
 
-  def insert_booking(self, doc: dict) -> None:
+  def insert_booking(self, doc: dict) -> str:
     result = self.user_trip_collection.insert_one(doc)
     doc["_id"] = result.inserted_id
+    return str(result.inserted_id)
+
+  def set_booking_razorpay_order(
+    self,
+    booking_id: str,
+    razorpay_order_id: str,
+    package_total_inr: int,
+    advance_inr: int,
+    amount_paise: int,
+  ) -> bool:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one(
+      {"$and": [{"$or": id_clauses}, {"payment": "unpaid"}]},
+      {
+        "$set": {
+          "razorpayOrderId": razorpay_order_id,
+          "razorpayPackageTotalInr": int(package_total_inr),
+          "razorpayAdvanceInr": int(advance_inr),
+          "razorpayAmountPaise": int(amount_paise),
+        }
+      },
+    )
+    return result.matched_count > 0
+
+  def set_booking_razorpay_payment_refs(self, booking_id: str, razorpay_payment_id: str) -> bool:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one(
+      {"$or": id_clauses},
+      {"$set": {"razorpayPaymentId": razorpay_payment_id}},
+    )
+    return result.matched_count > 0
 
   def find_booking_by_id(self, booking_id: str) -> Optional[dict]:
     raw = (booking_id or "").strip()
@@ -290,6 +335,12 @@ class MongoService:
     except Exception:
       pass
     return self.user_trip_collection.find_one({"$or": id_clauses})
+
+  def find_booking_by_razorpay_order_id(self, razorpay_order_id: str) -> Optional[dict]:
+    oid = (razorpay_order_id or "").strip()
+    if not oid:
+      return None
+    return self.user_trip_collection.find_one({"razorpayOrderId": oid})
 
   def package_total_inr_for_booking(self, booking: dict, trip_total_override: Optional[int]) -> Optional[int]:
     """Catalogue trip: price × headcount; planned trip: requires admin override."""
@@ -328,6 +379,7 @@ class MongoService:
     update: Dict[str, Any] = {
       "$set": {
         "payment": payment_status,
+        "confirmed": True,
         "confirmedAt": now,
         "packageTotalInr": int(package_total_inr),
         "advancePaymentInr": int(advance_payment_inr),

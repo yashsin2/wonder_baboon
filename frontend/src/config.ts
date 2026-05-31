@@ -57,6 +57,7 @@ export const logger = {
 export interface SessionUser {
   name?: string;
   email?: string;
+  mobile?: string;
   role: "user" | "admin";
   username?: string;
 }
@@ -170,14 +171,23 @@ export function attachSmoothScroll(scope: ParentNode = document): void {
 export function showMessagePopup(message: string, type: "success" | "error" = "success"): void {
   const el = document.createElement("div");
   el.className = `notification ${type} show`;
+  const plain = message.replace(/\s+/g, " ").trim();
+  const short =
+    plain.length > 120 || plain.includes("\n")
+      ? `${plain.slice(0, 117)}…`
+      : plain;
+  const safeBody = short
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
   el.innerHTML = `
-    <span>${message}</span>
-    <button class="close-note" style="margin-left:10px;background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">&times;</button>
+    <span>${safeBody}</span>
+    <button type="button" class="close-note" aria-label="Close">&times;</button>
   `;
   document.body.appendChild(el);
   const remove = (): void => el.remove();
   el.querySelector(".close-note")?.addEventListener("click", remove);
-  setTimeout(remove, 4000);
+  setTimeout(remove, 4500);
 }
 
 export function showSuccessModal(title: string, message: string, ctaLabel = "Great!"): void {

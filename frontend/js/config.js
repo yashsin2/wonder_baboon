@@ -120,14 +120,22 @@ export function attachSmoothScroll(scope = document) {
 export function showMessagePopup(message, type = "success") {
     const el = document.createElement("div");
     el.className = `notification ${type} show`;
+    const plain = message.replace(/\s+/g, " ").trim();
+    const short = plain.length > 120 || plain.includes("\n")
+        ? `${plain.slice(0, 117)}…`
+        : plain;
+    const safeBody = short
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
     el.innerHTML = `
-    <span>${message}</span>
-    <button class="close-note" style="margin-left:10px;background:none;border:none;color:#fff;font-size:18px;cursor:pointer;">&times;</button>
+    <span>${safeBody}</span>
+    <button type="button" class="close-note" aria-label="Close">&times;</button>
   `;
     document.body.appendChild(el);
     const remove = () => el.remove();
     el.querySelector(".close-note")?.addEventListener("click", remove);
-    setTimeout(remove, 4000);
+    setTimeout(remove, 4500);
 }
 export function showSuccessModal(title, message, ctaLabel = "Great!") {
     document.getElementById("wbSuccessModal")?.remove();

@@ -250,6 +250,27 @@ class AdminConfirmBookingRequest(AdminConfirmPaymentFields):
     return value.strip()
 
 
+class RazorpayCreateOrderRequest(BaseModel):
+  booking_id: str = Field(min_length=1, max_length=64)
+
+  @field_validator("booking_id")
+  @classmethod
+  def strip_booking_id(cls, value: str) -> str:
+    return value.strip()
+
+
+class RazorpayVerifyRequest(BaseModel):
+  booking_id: str = Field(min_length=1, max_length=64)
+  razorpay_order_id: str = Field(min_length=1, max_length=128)
+  razorpay_payment_id: str = Field(min_length=1, max_length=128)
+  razorpay_signature: str = Field(min_length=1, max_length=256)
+
+  @field_validator("booking_id")
+  @classmethod
+  def strip_booking_id(cls, value: str) -> str:
+    return value.strip()
+
+
 class AdminMarkFullPaymentRequest(BaseModel):
   booking_id: str = Field(min_length=1, max_length=64)
 

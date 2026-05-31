@@ -1,5 +1,6 @@
 import { API_BASE_URL, attachSmoothScroll, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
+import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js";
 import { TRIP_STYLE_ORDER } from "./trip-styles.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
@@ -153,6 +154,7 @@ function openBookingModal(trip) {
       <label>Number of people *</label>
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
       <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
+      <p class="bk-pay-note muted" id="bk_pay_note" hidden></p>
       <div class="wb-modal-actions">
         <button type="button" class="wb-cancel" id="bk_cancel">Cancel</button>
         <button type="submit" class="wb-primary" id="bk_submit">Confirm booking</button>
@@ -160,6 +162,21 @@ function openBookingModal(trip) {
     </form>
   `;
     const modal = createWbModal(`Book: ${escapeHtml(trip.title)}`, body);
+    let paySubmitLabel = "Confirm booking";
+    void fetchRazorpayConfig().then((cfg) => {
+        if (!cfg.enabled)
+            return;
+        const note = modal.querySelector("#bk_pay_note");
+        const submit = modal.querySelector("#bk_submit");
+        if (note) {
+            note.hidden = false;
+            note.textContent = bookingAdvanceNoticeText(cfg.advance_percent, cfg.advance_refund_days ?? 12);
+        }
+        if (submit) {
+            paySubmitLabel = `Book & pay ${cfg.advance_percent}% advance`;
+            submit.textContent = paySubmitLabel;
+        }
+    });
     const extrasWrap = modal.querySelector("#bk_extras_wrap");
     const peopleEl = modal.querySelector("#bk_people");
     const syncBookingExtras = () => {
@@ -204,11 +221,19 @@ function openBookingModal(trip) {
             return;
         }
         const submitBtn = modal.querySelector("#bk_submit");
+        const resetSubmitBtn = () => {
+            if (!submitBtn?.isConnected)
+                return;
+            submitBtn.disabled = false;
+            submitBtn.textContent = paySubmitLabel;
+        };
         if (submitBtn) {
             submitBtn.disabled = true;
             submitBtn.textContent = "Booking…";
         }
         try {
+            let saved = {};
+            let contact = {};
             if (isLoggedIn) {
                 const res = await fetch(`${API_BASE_URL}/bookings/user`, {
                     method: "POST",
@@ -222,6 +247,12 @@ function openBookingModal(trip) {
                 });
                 if (!res.ok)
                     throw new Error(await parseError(res));
+                saved = await res.json();
+                contact = {
+                    name: user?.name,
+                    email: user?.email,
+                    mobile: user?.mobile,
+                };
             }
             else {
                 const name = modal.querySelector("#bk_name").value.trim();
@@ -229,10 +260,7 @@ function openBookingModal(trip) {
                 const email = modal.querySelector("#bk_email").value.trim();
                 if (!name || !mobile) {
                     showMessagePopup("Name and mobile are required", "error");
-                    if (submitBtn) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = "Confirm booking";
-                    }
+                    resetSubmitBtn();
                     return;
                 }
                 const res = await fetch(`${API_BASE_URL}/bookings/guest`, {
@@ -251,18 +279,41 @@ function openBookingModal(trip) {
                 });
                 if (!res.ok)
                     throw new Error(await parseError(res));
+                saved = await res.json();
+                contact = { name, email: email || undefined, mobile };
             }
-            modal.remove();
-            showSuccessModal("Booking confirmed", `Your booking for ${trip.title} on ${date} is in. Our team will reach out shortly.`);
+            const refundDays = saved.advance_refund_days ?? 12;
+            if (saved.razorpay_enabled) {
+                if (submitBtn)
+                    submitBtn.textContent = "Opening payment…";
+                try {
+                    const { message } = await completeBookingWithOptionalRazorpay(saved, contact, trip.title, date, {
+                        onCheckoutOpen: () => {
+                            if (submitBtn?.isConnected)
+                                submitBtn.textContent = "Complete payment in popup";
+                        },
+                    });
+                    modal.remove();
+                    showSuccessModal("Booking confirmed", message);
+                }
+                catch (payError) {
+                    modal.remove();
+                    handlePaymentFlowError(payError, refundDays);
+                    logger.warn("advance payment not completed", payError);
+                }
+            }
+            else {
+                modal.remove();
+                showSuccessModal("Booking received", `Your booking for ${trip.title} on ${date} is in. Our team will reach out shortly.`);
+            }
             logger.info("booking confirmed", { trip: trip.title, date, people });
         }
         catch (error) {
             logger.error("booking failed", error);
             showMessagePopup(error instanceof Error ? error.message : "Booking failed", "error");
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Confirm booking";
-            }
+        }
+        finally {
+            resetSubmitBtn();
         }
     });
 }
