@@ -77,10 +77,24 @@ def create_order(
   if notes:
     payload["notes"] = notes
 
+  logger.info(
+    "Razorpay order.create start amount_paise=%s currency=%s receipt=%s key_prefix=%s",
+    amount,
+    payload["currency"],
+    (receipt or "")[:24],
+    (RAZORPAY_KEY_ID or "")[:16],
+  )
   try:
-    return _get_client().order.create(data=payload)
+    created = _get_client().order.create(data=payload)
+    logger.info(
+      "Razorpay order.create ok order_id=%s amount=%s status=%s",
+      created.get("id"),
+      created.get("amount"),
+      created.get("status"),
+    )
+    return created
   except Exception as error:
-    logger.error("Razorpay order.create failed: %s", error)
+    logger.error("Razorpay order.create failed: %s", error, exc_info=True)
     msg = str(error).lower()
     if "authentication" in msg:
       raise RazorpayAuthError(str(error)) from error
@@ -106,8 +120,21 @@ def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> 
   Must use client.utility — the SDK reads the secret from Client(auth=...), not a 2nd arg.
   """
   if not (order_id and payment_id and signature):
+    logger.warning(
+      "verify_payment_signature missing fields order=%s payment=%s sig_len=%s",
+      bool(order_id),
+      bool(payment_id),
+      len(signature or ""),
+    )
     return False
 
+  logger.info(
+    "verify_payment_signature start order=%s payment=%s sig_len=%s key_prefix=%s",
+    order_id.strip(),
+    payment_id.strip(),
+    len(signature.strip()),
+    (RAZORPAY_KEY_ID or "")[:16],
+  )
   params = {
     "razorpay_order_id": order_id.strip(),
     "razorpay_payment_id": payment_id.strip(),
@@ -115,7 +142,14 @@ def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> 
   }
   try:
     _get_client().utility.verify_payment_signature(params)
+    logger.info("verify_payment_signature ok order=%s payment=%s", order_id.strip(), payment_id.strip())
     return True
   except Exception as error:
-    logger.warning("Razorpay verify_payment_signature failed: %s", error)
+    logger.warning(
+      "verify_payment_signature failed order=%s payment=%s error=%s",
+      order_id.strip(),
+      payment_id.strip(),
+      error,
+      exc_info=True,
+    )
     return False

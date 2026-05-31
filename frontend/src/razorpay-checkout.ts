@@ -1,4 +1,11 @@
-import { API_BASE_URL, parseError, showSuccessModal } from "./config.js";
+import { API_BASE_URL, logger, parseError, showSuccessModal } from "./config.js";
+
+function payLog(level: "info" | "warn" | "error", step: string, detail?: unknown): void {
+  const msg = detail !== undefined ? `[wb-pay] ${step}` : `[wb-pay] ${step}`;
+  if (level === "info") logger.info(msg, detail ?? "");
+  else if (level === "warn") logger.warn(msg, detail ?? "");
+  else logger.error(msg, detail ?? "");
+}
 
 declare global {
   interface Window {
@@ -196,7 +203,13 @@ export async function payAdvanceForBooking(
   contact: { name?: string; email?: string; mobile?: string },
   hooks?: BookingPaymentHooks
 ): Promise<RazorpayPayResult> {
+  payLog("info", "payAdvance start", {
+    bookingId,
+    api: API_BASE_URL,
+    host: window.location.hostname,
+  });
   await loadRazorpayScript();
+  payLog("info", "checkout.js loaded", { hasRazorpay: !!window.Razorpay });
   const orderRes = await fetch(`${API_BASE_URL}/create-order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -204,6 +217,7 @@ export async function payAdvanceForBooking(
   });
   if (!orderRes.ok) {
     const detail = await parseError(orderRes);
+    payLog("error", "create-order failed", { status: orderRes.status, detail });
     const err = new Error(detail);
     (err as Error & { providerSetup?: boolean }).providerSetup = isProviderSetupError(detail);
     throw err;
@@ -222,10 +236,18 @@ export async function payAdvanceForBooking(
 
   const amountPaise = Number(order.amount ?? order.amount_paise ?? 0);
   const currency = order.currency || "INR";
+  payLog("info", "create-order ok", {
+    order_id: order.order_id,
+    key_prefix: (order.key_id || "").slice(0, 16),
+    amount_paise: amountPaise,
+    advance_inr: order.advance_payment_inr,
+  });
   if (!order.order_id || !order.key_id) {
+    payLog("error", "create-order response missing fields", order);
     throw new Error("Could not start Razorpay checkout (missing order). Try again.");
   }
   if (!Number.isFinite(amountPaise) || amountPaise < 100) {
+    payLog("error", "invalid amount for checkout", { amountPaise, order });
     throw new Error(
       `Could not start Razorpay checkout (invalid amount ₹${Math.round(amountPaise / 100)}). Contact Wonder Baboon.`
     );
@@ -247,6 +269,8 @@ export async function payAdvanceForBooking(
 
   return new Promise((resolve, reject) => {
     if (!window.Razorpay) {
+      document.body.classList.remove("wb-razorpay-checkout");
+      payLog("error", "window.Razorpay missing after script load");
       reject(new Error("Razorpay checkout is not available in this browser"));
       return;
     }
@@ -255,10 +279,15 @@ export async function payAdvanceForBooking(
     const finish = (fn: () => void): void => {
       if (checkoutPhase === "settled") return;
       checkoutPhase = "settled";
+      document.body.classList.remove("wb-razorpay-checkout");
       fn();
     };
 
     const verifyOnServer = async (response: Record<string, string>): Promise<void> => {
+      payLog("info", "razorpay handler success, verifying", {
+        order_id: response.razorpay_order_id,
+        payment_id: response.razorpay_payment_id,
+      });
       const verifyRes = await fetch(`${API_BASE_URL}/verify-payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -270,9 +299,12 @@ export async function payAdvanceForBooking(
         }),
       });
       if (!verifyRes.ok) {
-        throw new Error(await parseError(verifyRes));
+        const detail = await parseError(verifyRes);
+        payLog("error", "verify-payment failed", { status: verifyRes.status, detail });
+        throw new Error(detail);
       }
       const verified = (await verifyRes.json()) as RazorpayPayResult & { success?: boolean };
+      payLog("info", "verify-payment ok", verified);
       finish(() => resolve(verified));
     };
 
@@ -296,14 +328,17 @@ export async function payAdvanceForBooking(
         checkoutPhase = "paying";
         void verifyOnServer(response).catch((err: unknown) => {
           const error = err instanceof Error ? err : new Error("Payment verification failed");
+          payLog("error", "verify after handler failed", error);
           (error as Error & { verifyFailed?: boolean }).verifyFailed = true;
           finish(() => reject(error));
         });
       },
       modal: {
         ondismiss: () => {
+          payLog("warn", "razorpay modal ondismiss", { phase: checkoutPhase });
           window.setTimeout(() => {
             if (checkoutPhase !== "open") return;
+            payLog("warn", "treating ondismiss as checkout closed before pay");
             const e = new Error(
               "Razorpay closed before payment completed. If the payment window never appeared, use test keys (rzp_test_) on localhost or check your domain in the Razorpay Dashboard."
             );
@@ -316,6 +351,7 @@ export async function payAdvanceForBooking(
 
     rzp.on("payment.failed", (raw: unknown) => {
       const response = raw as { error?: { description?: string; reason?: string; code?: string } };
+      payLog("error", "razorpay payment.failed", response);
       const desc =
         response?.error?.description ||
         response?.error?.reason ||
@@ -330,12 +366,15 @@ export async function payAdvanceForBooking(
     });
 
     hooks?.onCheckoutOpen?.();
+    payLog("info", "calling rzp.open()", { order_id: order.order_id, amount_paise: amountPaise });
     window.setTimeout(() => {
       try {
         rzp.open();
+        payLog("info", "rzp.open() called");
       } catch (openErr: unknown) {
         const msg =
           openErr instanceof Error ? openErr.message : "Could not open Razorpay checkout";
+        payLog("error", "rzp.open() threw", openErr);
         const e = new Error(msg);
         (e as Error & { providerSetup?: boolean }).providerSetup = true;
         finish(() => reject(e));
@@ -350,6 +389,11 @@ export function handlePaymentFlowError(
   resume?: PaymentResumeContext
 ): void {
   const message = error instanceof Error ? error.message : "Payment could not be completed";
+  payLog("error", "handlePaymentFlowError", {
+    message,
+    error,
+    bookingId: resume?.bookingId,
+  });
   const cancelled =
     error instanceof Error && (error as Error & { cancelled?: boolean }).cancelled === true;
   const paymentFailed =

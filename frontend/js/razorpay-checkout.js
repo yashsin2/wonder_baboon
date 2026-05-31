@@ -1,4 +1,13 @@
-import { API_BASE_URL, parseError, showSuccessModal } from "./config.js";
+import { API_BASE_URL, logger, parseError, showSuccessModal } from "./config.js";
+function payLog(level, step, detail) {
+    const msg = detail !== undefined ? `[wb-pay] ${step}` : `[wb-pay] ${step}`;
+    if (level === "info")
+        logger.info(msg, detail ?? "");
+    else if (level === "warn")
+        logger.warn(msg, detail ?? "");
+    else
+        logger.error(msg, detail ?? "");
+}
 let scriptPromise = null;
 export function advanceRefundPolicyText(refundDays = 12) {
     const days = Math.max(1, Math.floor(refundDays));
@@ -122,7 +131,13 @@ function isNetworkOrCorsError(message) {
     return /failed to fetch|networkerror|load failed|network request|cors/i.test(m);
 }
 export async function payAdvanceForBooking(bookingId, contact, hooks) {
+    payLog("info", "payAdvance start", {
+        bookingId,
+        api: API_BASE_URL,
+        host: window.location.hostname,
+    });
     await loadRazorpayScript();
+    payLog("info", "checkout.js loaded", { hasRazorpay: !!window.Razorpay });
     const orderRes = await fetch(`${API_BASE_URL}/create-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -130,6 +145,7 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
     });
     if (!orderRes.ok) {
         const detail = await parseError(orderRes);
+        payLog("error", "create-order failed", { status: orderRes.status, detail });
         const err = new Error(detail);
         err.providerSetup = isProviderSetupError(detail);
         throw err;
@@ -137,10 +153,18 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
     const order = (await orderRes.json());
     const amountPaise = Number(order.amount ?? order.amount_paise ?? 0);
     const currency = order.currency || "INR";
+    payLog("info", "create-order ok", {
+        order_id: order.order_id,
+        key_prefix: (order.key_id || "").slice(0, 16),
+        amount_paise: amountPaise,
+        advance_inr: order.advance_payment_inr,
+    });
     if (!order.order_id || !order.key_id) {
+        payLog("error", "create-order response missing fields", order);
         throw new Error("Could not start Razorpay checkout (missing order). Try again.");
     }
     if (!Number.isFinite(amountPaise) || amountPaise < 100) {
+        payLog("error", "invalid amount for checkout", { amountPaise, order });
         throw new Error(`Could not start Razorpay checkout (invalid amount ₹${Math.round(amountPaise / 100)}). Contact Wonder Baboon.`);
     }
     const host = window.location.hostname;
@@ -154,6 +178,8 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
     document.body.classList.add("wb-razorpay-checkout");
     return new Promise((resolve, reject) => {
         if (!window.Razorpay) {
+            document.body.classList.remove("wb-razorpay-checkout");
+            payLog("error", "window.Razorpay missing after script load");
             reject(new Error("Razorpay checkout is not available in this browser"));
             return;
         }
@@ -162,9 +188,14 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
             if (checkoutPhase === "settled")
                 return;
             checkoutPhase = "settled";
+            document.body.classList.remove("wb-razorpay-checkout");
             fn();
         };
         const verifyOnServer = async (response) => {
+            payLog("info", "razorpay handler success, verifying", {
+                order_id: response.razorpay_order_id,
+                payment_id: response.razorpay_payment_id,
+            });
             const verifyRes = await fetch(`${API_BASE_URL}/verify-payment`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -176,9 +207,12 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
                 }),
             });
             if (!verifyRes.ok) {
-                throw new Error(await parseError(verifyRes));
+                const detail = await parseError(verifyRes);
+                payLog("error", "verify-payment failed", { status: verifyRes.status, detail });
+                throw new Error(detail);
             }
             const verified = (await verifyRes.json());
+            payLog("info", "verify-payment ok", verified);
             finish(() => resolve(verified));
         };
         const checkoutOptions = {
@@ -201,15 +235,18 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
                 checkoutPhase = "paying";
                 void verifyOnServer(response).catch((err) => {
                     const error = err instanceof Error ? err : new Error("Payment verification failed");
+                    payLog("error", "verify after handler failed", error);
                     error.verifyFailed = true;
                     finish(() => reject(error));
                 });
             },
             modal: {
                 ondismiss: () => {
+                    payLog("warn", "razorpay modal ondismiss", { phase: checkoutPhase });
                     window.setTimeout(() => {
                         if (checkoutPhase !== "open")
                             return;
+                        payLog("warn", "treating ondismiss as checkout closed before pay");
                         const e = new Error("Razorpay closed before payment completed. If the payment window never appeared, use test keys (rzp_test_) on localhost or check your domain in the Razorpay Dashboard.");
                         e.providerSetup = true;
                         finish(() => reject(e));
@@ -219,6 +256,7 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
         });
         rzp.on("payment.failed", (raw) => {
             const response = raw;
+            payLog("error", "razorpay payment.failed", response);
             const desc = response?.error?.description ||
                 response?.error?.reason ||
                 "Payment failed. Please try again.";
@@ -231,12 +269,15 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
             finish(() => reject(e));
         });
         hooks?.onCheckoutOpen?.();
+        payLog("info", "calling rzp.open()", { order_id: order.order_id, amount_paise: amountPaise });
         window.setTimeout(() => {
             try {
                 rzp.open();
+                payLog("info", "rzp.open() called");
             }
             catch (openErr) {
                 const msg = openErr instanceof Error ? openErr.message : "Could not open Razorpay checkout";
+                payLog("error", "rzp.open() threw", openErr);
                 const e = new Error(msg);
                 e.providerSetup = true;
                 finish(() => reject(e));
@@ -246,6 +287,11 @@ export async function payAdvanceForBooking(bookingId, contact, hooks) {
 }
 export function handlePaymentFlowError(error, refundDays = 12, resume) {
     const message = error instanceof Error ? error.message : "Payment could not be completed";
+    payLog("error", "handlePaymentFlowError", {
+        message,
+        error,
+        bookingId: resume?.bookingId,
+    });
     const cancelled = error instanceof Error && error.cancelled === true;
     const paymentFailed = error instanceof Error && error.paymentFailed === true;
     const verifyFailed = error instanceof Error && error.verifyFailed === true;
