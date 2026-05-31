@@ -1,10 +1,13 @@
 import re
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from auth_utils import sanitize_text
+
+TripStyleSlug = Literal["backpackers", "motorcycle_diaries", "dolce_far_niente", "hikers"]
+TRIP_STYLE_SLUGS = frozenset({"backpackers", "motorcycle_diaries", "dolce_far_niente", "hikers"})
 
 
 class UserSignupRequest(BaseModel):
@@ -247,6 +250,36 @@ class AdminConfirmBookingRequest(AdminConfirmPaymentFields):
     return value.strip()
 
 
+class AdminMarkFullPaymentRequest(BaseModel):
+  booking_id: str = Field(min_length=1, max_length=64)
+
+  @field_validator("booking_id")
+  @classmethod
+  def strip_booking_id(cls, value: str) -> str:
+    return value.strip()
+
+
+class AddMembersRequest(BaseModel):
+  additional_travelers: List[str] = Field(min_length=1, max_length=19)
+
+  @field_validator("additional_travelers", mode="before")
+  @classmethod
+  def coerce_extras(cls, value: object) -> List[str]:
+    if value is None:
+      return []
+    if not isinstance(value, list):
+      return []
+    return [str(x).strip() for x in value if str(x).strip()]
+
+  @field_validator("additional_travelers")
+  @classmethod
+  def sanitize_extras(cls, value: List[str]) -> List[str]:
+    cleaned = [sanitize_text(item, "full_name") for item in value[:19]]
+    if not cleaned:
+      raise ValueError("enter at least one traveler name")
+    return cleaned
+
+
 class AdminTripCreateRequest(BaseModel):
   title: str = Field(min_length=3, max_length=120)
   location: str = Field(min_length=2, max_length=80)
@@ -256,6 +289,7 @@ class AdminTripCreateRequest(BaseModel):
   end_date: str
   image_name: str = Field(min_length=3, max_length=120)
   published: bool = True
+  trip_style: TripStyleSlug = "backpackers"
 
   @field_validator("title", "location", "duration_label", "image_name")
   @classmethod
@@ -278,6 +312,7 @@ class AdminTripUpdateRequest(BaseModel):
   end_date: Optional[str] = None
   image_name: Optional[str] = Field(default=None, min_length=3, max_length=120)
   published: Optional[bool] = None
+  trip_style: Optional[TripStyleSlug] = None
 
   @field_validator("title", "location", "duration_label", "image_name")
   @classmethod

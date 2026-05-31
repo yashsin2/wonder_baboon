@@ -61,22 +61,34 @@ async function loadUserBookings(): Promise<void> {
     }
 
     function upcomingPaymentLine(booking: Booking): string {
-      const paid = booking.payment === "paid";
-      const cls = paid ? "booking-payment booking-payment--confirmed" : "booking-payment booking-payment--pending";
-      if (paid) {
+      const fullyPaid = booking.payment === "paid";
+      const advancePaid = booking.payment === "advance_paid";
+      const fmt = (n: number): string => `₹${Number(n).toLocaleString("en-IN")}`;
+      if (fullyPaid) {
+        const cls = "booking-payment booking-payment--confirmed";
         if (
           booking.packageTotalInr != null &&
           booking.advancePaymentInr != null &&
           booking.balanceDueInr != null
         ) {
-          const fmt = (n: number): string =>
-            `₹${Number(n).toLocaleString("en-IN")}`;
-          const text = `Booking confirmed — total ${fmt(booking.packageTotalInr)}, advance ${fmt(booking.advancePaymentInr)}, balance ${fmt(booking.balanceDueInr)}.`;
+          const text = `Fully paid — total ${fmt(booking.packageTotalInr)}, balance ${fmt(booking.balanceDueInr)}.`;
           return `<p class="${cls}">${text}</p>`;
         }
-        return `<p class="${cls}">Booking confirmed.</p>`;
+        return `<p class="${cls}">Fully paid — you're all set.</p>`;
       }
-      return `<p class="${cls}">Your booking will be confirmed once we record your advance payment.</p>`;
+      if (advancePaid) {
+        const cls = "booking-payment booking-payment--confirmed";
+        if (
+          booking.packageTotalInr != null &&
+          booking.advancePaymentInr != null &&
+          booking.balanceDueInr != null
+        ) {
+          const text = `Advance received — total ${fmt(booking.packageTotalInr)}, advance ${fmt(booking.advancePaymentInr)}, balance due ${fmt(booking.balanceDueInr)}.`;
+          return `<p class="${cls}">${text}</p>`;
+        }
+        return `<p class="${cls}">Advance received — balance due before travel.</p>`;
+      }
+      return `<p class="booking-payment booking-payment--pending">Your booking will be confirmed once we record your advance payment.</p>`;
     }
 
     function createBookingCard(booking: Booking, opts?: { paymentNote?: boolean }): string {

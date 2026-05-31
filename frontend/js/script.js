@@ -1,5 +1,6 @@
 import { API_BASE_URL, attachSmoothScroll, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
+import { TRIP_STYLE_ORDER } from "./trip-styles.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
 const navLinks = document.querySelector(".nav-links");
@@ -26,14 +27,31 @@ function tripMatchesTerm(trip, term) {
 function scrollTripsIntoView() {
     document.getElementById("trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
-const TRAVEL_STYLE_HINTS = {
-    adventure: /trek|trekking|adventure|hike|hiking|camp|camping|mountain|summit|spiti|ladakh|peak|dharam/i,
-    cultural: /cultural|heritage|temple|palace|fort|history|varanasi|agra|delhi|rajasthan|city|golden triangle/i,
-    spiritual: /spiritual|wellness|yoga|meditat|rishikesh|ashram|pilgrim|dharam|dharma|peace/i,
-    wildlife: /wild|safari|tiger|national park|jungle|sanctuary|bird|corbett|kanha|forest/i,
-    luxury: /luxury|comfort|premium|resort|boutique|private/i,
-    budget: /budget|backpack|hostel|economy/i,
-};
+const TRAVEL_STYLE_SLUGS = new Set(TRIP_STYLE_ORDER);
+/** Active vibe filter on home upcoming-trips chips (panel links still go to style pages). */
+let activeStyleChip = "backpackers";
+function syncStyleChipUi() {
+    document.querySelectorAll("[data-style-chip]").forEach((chip) => {
+        const isActive = chip.dataset.styleChip === activeStyleChip;
+        chip.classList.toggle("active", isActive);
+        chip.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+    const heroEl = document.getElementById("heroTravelStyle");
+    if (heroEl)
+        heroEl.value = activeStyleChip;
+}
+function setupStyleChipFilters() {
+    document.querySelectorAll("[data-style-chip]").forEach((chip) => {
+        chip.addEventListener("click", () => {
+            const slug = (chip.dataset.styleChip || "").trim();
+            if (!slug || !TRAVEL_STYLE_SLUGS.has(slug))
+                return;
+            activeStyleChip = activeStyleChip === slug ? "" : slug;
+            syncStyleChipUi();
+            filterTripsAndReveal({ scroll: true });
+        });
+    });
+}
 function filterTripsCatalog(filters) {
     let list = [...allTrips];
     const dest = (filters.destination || "").trim().toLowerCase();
@@ -41,11 +59,8 @@ function filterTripsCatalog(filters) {
         list = list.filter((trip) => tripMatchesTerm(trip, dest));
     }
     const style = (filters.travelStyle || "").trim().toLowerCase();
-    if (style) {
-        const re = TRAVEL_STYLE_HINTS[style];
-        if (re) {
-            list = list.filter((trip) => re.test(`${trip.title} ${trip.location}`));
-        }
+    if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+        list = list.filter((trip) => (trip.tripStyle || "backpackers") === style);
     }
     const dateStr = (filters.date || "").trim();
     if (dateStr) {
@@ -418,7 +433,8 @@ async function loadTrips() {
         if (!response.ok)
             throw new Error(await parseError(response, payload));
         allTrips = payload.trips || [];
-        renderTrips(allTrips);
+        syncStyleChipUi();
+        filterTripsAndReveal();
     }
     catch (error) {
         const msg = error instanceof TypeError && (error.message.includes("fetch") || error.message.includes("Load failed"))
@@ -431,8 +447,15 @@ async function loadTrips() {
 }
 function filterTripsAndReveal(opts) {
     const term = (searchInput?.value || "").trim().toLowerCase();
-    const filtered = !term ? allTrips : allTrips.filter((trip) => tripMatchesTerm(trip, term));
-    const emptyHint = term && filtered.length === 0 ? "No trips match your search." : undefined;
+    let filtered = !term ? [...allTrips] : allTrips.filter((trip) => tripMatchesTerm(trip, term));
+    if (activeStyleChip) {
+        filtered = filtered.filter((trip) => (trip.tripStyle || "backpackers") === activeStyleChip);
+    }
+    const emptyHint = filtered.length === 0
+        ? activeStyleChip || term
+            ? "No trips match this filter. Try another vibe or clear the search."
+            : undefined
+        : undefined;
     renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
     if (opts?.scroll)
         scrollTripsIntoView();
@@ -443,8 +466,12 @@ function handleHeroFindTrips() {
     const travelStyleEl = document.getElementById("heroTravelStyle");
     const travelStyle = travelStyleEl?.value?.trim() || "";
     if (!destination && !travelStyle && !dateOfTravel) {
-        showMessagePopup("Enter a destination, choose a travel style, or pick a date to search trips.", "error");
+        showMessagePopup("Enter a destination, choose a travel vibe, or pick a date to search trips.", "error");
         return;
+    }
+    if (travelStyle && TRAVEL_STYLE_SLUGS.has(travelStyle)) {
+        activeStyleChip = travelStyle;
+        syncStyleChipUi();
     }
     const filtered = filterTripsCatalog({ destination, travelStyle, date: dateOfTravel });
     const emptyHint = filtered.length === 0
@@ -634,6 +661,7 @@ function setupTripCardOpenDetail() {
         if (!trip)
             return;
         event.preventDefault();
+        event.stopPropagation();
         openTripDetailModal(trip);
     });
 }
@@ -642,6 +670,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupMobileMenu();
     attachSmoothScroll(document);
     setupParallax();
+    setupStyleChipFilters();
+    syncStyleChipUi();
     setupTripCardOpenDetail();
     setupItineraryButtons();
     await loadTrips();

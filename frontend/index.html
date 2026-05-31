@@ -20,7 +20,7 @@
   <meta charset="UTF-8">
   
   <title>Wonder Baboon</title>
-  <link rel="stylesheet" href="/styles.css?v=wb20260517">
+  <link rel="stylesheet" href="/styles.css?v=4f934e3">
   <!-- Swiper CSS -->
 <link
 rel="stylesheet"
@@ -98,6 +98,13 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.15.68.4.95.71"/></svg></span>
         <span>Settings</span>
       </a>
+        <div class="up-nav-section">
+        <p class="up-nav-section-label">Explore by vibe</p>
+        <a class="up-nav-item up-nav-item--sub" href="/backpackers" data-page="backpackers"><span>The Backpackers</span></a>
+        <a class="up-nav-item up-nav-item--sub" href="/motorcycle-diaries" data-page="motorcycle-diaries"><span>The Motorcycle Diaries</span></a>
+        <a class="up-nav-item up-nav-item--sub" href="/dolce-far-niente" data-page="dolce-far-niente"><span>Dolce far niente</span></a>
+        <a class="up-nav-item up-nav-item--sub" href="/hikers" data-page="hikers"><span>The Hikers</span></a>
+      </div>
     </nav>
 
     <footer class="user-panel-foot" id="userPanelFoot">
@@ -123,13 +130,11 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
             <div class="search-box">
                 <input id="planDestination" type="text" placeholder="Where do you want to go?">
                 <select id="heroTravelStyle" class="travel-style-select">
-                    <option value="">Travel Style</option>
-                    <option value="adventure">Adventure & Trekking</option>
-                    <option value="cultural">Cultural & Heritage</option>
-                    <option value="spiritual">Spiritual & Wellness</option>
-                    <option value="wildlife">Wildlife & Nature</option>
-                    <option value="luxury">Luxury & Comfort</option>
-                    <option value="budget">Budget & Backpacking</option>
+                    <option value="">Travel vibe</option>
+                    <option value="backpackers">The Backpackers</option>
+                    <option value="motorcycle_diaries">The Motorcycle Diaries</option>
+                    <option value="dolce_far_niente">Dolce far niente</option>
+                    <option value="hikers">The Hikers</option>
                 </select>
                 <input id="planDate" type="date" placeholder="When do you want to go?">
                 <button id="planTripBtn" type="button">Search trips</button>
@@ -143,7 +148,13 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 
 <section class="trips" id="trips">
   <h2 class="section-title">✨ Upcoming Trips ✨</h2>
-  <p class="section-subtitle">Published adventures from our trip catalog</p>
+  <p class="section-subtitle">Filter by vibe — tap a style to show matching trips below</p>
+  <div class="trip-style-chips" role="group" aria-label="Filter trips by travel style">
+    <button type="button" class="trip-style-chip active" data-style-chip="backpackers" aria-pressed="true">The Backpackers</button>
+    <button type="button" class="trip-style-chip" data-style-chip="motorcycle_diaries" aria-pressed="false">Motorcycle Diaries</button>
+    <button type="button" class="trip-style-chip" data-style-chip="dolce_far_niente" aria-pressed="false">Dolce far niente</button>
+    <button type="button" class="trip-style-chip" data-style-chip="hikers" aria-pressed="false">The Hikers</button>
+  </div>
   <div class="trips-carousel">
     <div class="swiper tripsSwiper">
       <div class="swiper-wrapper" id="tripsContainer"></div>
@@ -298,7 +309,8 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
   </div>
 </footer>
 
-<script type="module" src="/js/script.js?v=wb20260517"></script>
-<script type="module" src="/js/user-panel.js?v=wb20260517"></script>
+<script type="module" src="/js/script.js?v=4f934e3"></script>
+<script type="module" src="/js/user-panel.js?v=4f934e3"></script>
+<script src="/version-check.js?v=4f934e3" defer></script>
 </body>
 </html>

@@ -20,6 +20,23 @@
   RewriteRule ^settings/?$ settings.html [L,NC]
   RewriteRule ^auth/?$ auth.html [L,NC]
   RewriteRule ^admin-dashboard/?$ admin-dashboard.html [L,NC]
+  RewriteRule ^backpackers/?$ backpackers.html [L,NC]
+  RewriteRule ^motorcycle-diaries/?$ motorcycle-diaries.html [L,NC]
+  RewriteRule ^dolce-far-niente/?$ dolce-far-niente.html [L,NC]
+  RewriteRule ^hikers/?$ hikers.html [L,NC]
 </IfModule>
 
 DirectoryIndex index.html
+
+# Cache: HTML + version manifest always revalidate; assets use browser cache until ?v= changes.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "^(version\.json|version-check\.js)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+  <FilesMatch "\.(css|js)$">
+    Header set Cache-Control "public, max-age=3600"
+  </FilesMatch>
+</IfModule>

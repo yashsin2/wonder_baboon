@@ -12,8 +12,18 @@ from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from auth_utils import hash_password
 from config import ADMIN_PASSWORD, ADMIN_USERNAME, MONGO_URI
+from models import TRIP_STYLE_SLUGS
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_TRIP_STYLE = "backpackers"
+
+
+def normalize_trip_style(value: Optional[str]) -> str:
+  slug = (value or "").strip().lower()
+  if slug in TRIP_STYLE_SLUGS:
+    return slug
+  return DEFAULT_TRIP_STYLE
 
 
 class MongoService:
@@ -115,6 +125,7 @@ class MongoService:
             "endDate": "2026-06-18",
             "imageUrl": "./assets/lake.jpg",
             "published": True,
+            "tripStyle": "hikers",
             "createdAt": datetime.utcnow(),
           },
           {
@@ -127,6 +138,7 @@ class MongoService:
             "endDate": "2026-06-22",
             "imageUrl": "./assets/banaras.jpg",
             "published": True,
+            "tripStyle": "backpackers",
             "createdAt": datetime.utcnow(),
           },
           {
@@ -139,6 +151,7 @@ class MongoService:
             "endDate": "2026-06-29",
             "imageUrl": "./assets/rishikesh1.jpg",
             "published": True,
+            "tripStyle": "dolce_far_niente",
             "createdAt": datetime.utcnow(),
           },
           {
@@ -151,7 +164,7 @@ class MongoService:
             "endDate": "2026-07-06",
             "imageUrl": "./assets/nagtibba3.jpg",
             "published": True,
-            "createdAt": datetime.utcnow(),
+            "tripStyle": "hikers",
           },
         ]
       )
@@ -218,6 +231,17 @@ class MongoService:
   def increment_otp_attempts(self, otp_id) -> None:
     self.otp_collection.update_one({"_id": otp_id}, {"$inc": {"attempts": 1}})
 
+  def _serialize_trip(self, trip: dict) -> None:
+    trip["_id"] = str(trip["_id"])
+    trip["tripStyle"] = normalize_trip_style(trip.get("tripStyle"))
+    image = trip.get("imageUrl") or "./assets/lake.jpg"
+    if image.startswith("./assets/"):
+      trip["imageUrl"] = image
+    elif image.startswith("assets/"):
+      trip["imageUrl"] = f"./{image}"
+    else:
+      trip["imageUrl"] = f"./assets/{image.split('/')[-1]}"
+
   def list_published_trips(self) -> List[dict]:
     trips = list(
       self.add_trip_collection.find(
@@ -232,18 +256,12 @@ class MongoService:
           "endDate": 1,
           "imageUrl": 1,
           "itineraryHtml": 1,
+          "tripStyle": 1,
         },
       ).sort("startDate", ASCENDING)
     )
     for trip in trips:
-      trip["_id"] = str(trip["_id"])
-      image = trip.get("imageUrl") or "./assets/lake.jpg"
-      if image.startswith("./assets/"):
-        trip["imageUrl"] = image
-      elif image.startswith("assets/"):
-        trip["imageUrl"] = f"./{image}"
-      else:
-        trip["imageUrl"] = f"./assets/{image.split('/')[-1]}"
+      self._serialize_trip(trip)
     return trips
 
   def backfill_booking_payment(self) -> None:
@@ -305,13 +323,47 @@ class MongoService:
     if not raw:
       return False
     now = datetime.utcnow()
-    update = {
+    balance = int(balance_due_inr)
+    payment_status = "paid" if balance <= 0 else "advance_paid"
+    update: Dict[str, Any] = {
       "$set": {
-        "payment": "paid",
+        "payment": payment_status,
         "confirmedAt": now,
         "packageTotalInr": int(package_total_inr),
         "advancePaymentInr": int(advance_payment_inr),
-        "balanceDueInr": int(balance_due_inr),
+        "balanceDueInr": max(0, balance),
+      }
+    }
+    if payment_status == "paid":
+      update["$set"]["fullyPaidAt"] = now
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one({"$or": id_clauses}, update)
+    return result.matched_count > 0
+
+  def mark_booking_fully_paid(self, booking_id: str) -> Optional[dict]:
+    """Record remaining balance received; booking must be advance_paid."""
+    raw = (booking_id or "").strip()
+    if not raw:
+      return None
+    booking = self.find_booking_by_id(raw)
+    if not booking:
+      return None
+    if booking.get("payment") != "advance_paid":
+      return None
+    package_total = int(booking.get("packageTotalInr") or 0)
+    if package_total <= 0:
+      return None
+    now = datetime.utcnow()
+    update = {
+      "$set": {
+        "payment": "paid",
+        "advancePaymentInr": package_total,
+        "balanceDueInr": 0,
+        "fullyPaidAt": now,
       }
     }
     id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
@@ -320,7 +372,9 @@ class MongoService:
     except Exception:
       pass
     result = self.user_trip_collection.update_one({"$or": id_clauses}, update)
-    return result.matched_count > 0
+    if result.matched_count == 0:
+      return None
+    return self.find_booking_by_id(raw)
 
   def set_booking_payment_paid(self, booking_id: str) -> bool:
     """Legacy: marks paid without payment breakdown (prefer confirm_booking_with_payment_breakdown)."""
@@ -358,6 +412,7 @@ class MongoService:
       "endDate": payload["end_date"],
       "imageUrl": f"./assets/{payload['image_name']}",
       "published": payload.get("published", True),
+      "tripStyle": normalize_trip_style(payload.get("trip_style")),
       "createdAt": datetime.utcnow(),
     }
     if payload.get("itineraryHtml"):
@@ -394,6 +449,8 @@ class MongoService:
       update["endDate"] = str(fields["end_date"]).strip()
     if "published" in fields and fields["published"] is not None:
       update["published"] = bool(fields["published"])
+    if "trip_style" in fields and fields["trip_style"] is not None:
+      update["tripStyle"] = normalize_trip_style(str(fields["trip_style"]))
     if "image_name" in fields and fields["image_name"] is not None:
       iname = str(fields["image_name"]).strip()
       update["imageUrl"] = f"./assets/{iname}"
@@ -430,6 +487,44 @@ class MongoService:
     )
     return result.matched_count > 0
 
+  def _effective_payment_status(self, booking: dict) -> str:
+    """Align payment label with balance (fixes stale paid + balance > 0)."""
+    current = str(booking.get("payment") or "unpaid").strip().lower()
+    balance = int(booking.get("balanceDueInr") or 0)
+    package = int(booking.get("packageTotalInr") or 0)
+    if current == "paid" and balance > 0:
+      return "advance_paid"
+    if current == "advance_paid" and balance <= 0 and package > 0:
+      return "paid"
+    if current in ("paid", "advance_paid", "unpaid"):
+      return current
+    return "unpaid"
+
+  def _sync_booking_payment_status(self, booking: dict, *, persist: bool = False) -> None:
+    if not booking:
+      return
+    effective = self._effective_payment_status(booking)
+    current = str(booking.get("payment") or "unpaid")
+    if effective == current:
+      return
+    booking["payment"] = effective
+    if not persist:
+      return
+    raw_id = booking.get("_id")
+    if raw_id is None:
+      return
+    update: Dict[str, Any] = {"$set": {"payment": effective}}
+    if effective == "paid":
+      update["$set"]["fullyPaidAt"] = datetime.utcnow()
+    elif current == "paid":
+      update["$unset"] = {"fullyPaidAt": ""}
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw_id}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(str(raw_id))})
+    except Exception:
+      pass
+    self.user_trip_collection.update_one({"$or": id_clauses}, update)
+
   def list_user_bookings(self, email: str, mobile: Optional[str] = None) -> List[dict]:
     clauses: List[Dict[str, Any]] = [{"email": email}]
     m = (mobile or "").strip()
@@ -444,6 +539,7 @@ class MongoService:
         trip = self.find_trip_by_id(str(tid))
         if trip and trip.get("itineraryHtml"):
           booking["itineraryHtml"] = trip["itineraryHtml"]
+      self._sync_booking_payment_status(booking)
     return bookings
 
   def get_admin_stats(self) -> Dict[str, Any]:
@@ -453,12 +549,16 @@ class MongoService:
 
     total_bookings = self.user_trip_collection.count_documents({})
     paid_bookings = self.user_trip_collection.count_documents({"payment": "paid"})
-    unpaid_bookings = total_bookings - paid_bookings
+    advance_paid_bookings = self.user_trip_collection.count_documents({"payment": "advance_paid"})
+    unpaid_bookings = self.user_trip_collection.count_documents(
+      {"$or": [{"payment": "unpaid"}, {"payment": {"$exists": False}}, {"payment": None}, {"payment": ""}]}
+    )
 
     return {
       "totalTrips": self.add_trip_collection.count_documents({}),
       "totalBookings": total_bookings,
       "paidBookings": paid_bookings,
+      "advancePaidBookings": advance_paid_bookings,
       "unpaidBookings": unpaid_bookings,
       "monthBookings": self.user_trip_collection.count_documents(
         {"createdAt": {"$gte": month_start, "$lte": month_end}}
@@ -486,6 +586,7 @@ class MongoService:
       total = self.package_total_inr_for_booking(booking, None)
       if total is not None:
         booking["computedPackageTotalInr"] = total
+      self._sync_booking_payment_status(booking, persist=True)
     return bookings
 
   def search_trips(self, search: str) -> List[dict]:
@@ -494,8 +595,122 @@ class MongoService:
       query = {"title": {"$regex": search.strip(), "$options": "i"}}
     trips = list(self.add_trip_collection.find(query).sort("createdAt", DESCENDING))
     for trip in trips:
-      trip["_id"] = str(trip["_id"])
+      self._serialize_trip(trip)
     return trips
+
+  def _booking_id_clauses(self, booking_id: str) -> List[Dict[str, Any]]:
+    raw = (booking_id or "").strip()
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    return id_clauses
+
+  def delete_booking(self, booking_id: str) -> bool:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    result = self.user_trip_collection.delete_one({"$or": self._booking_id_clauses(raw)})
+    return result.deleted_count > 0
+
+  def recalculate_booking_totals(self, booking: dict, new_people: int) -> Dict[str, int]:
+    people = max(1, min(20, int(new_people)))
+    if booking.get("tripType") == "defined_trip" and booking.get("tripId"):
+      trip = self.find_trip_by_id(str(booking["tripId"]))
+      if trip and trip.get("price") is not None:
+        per_person = int(trip["price"])
+        new_total = per_person * people
+      else:
+        old_people = max(1, int(booking.get("numberOfPeople") or 1))
+        old_total = int(booking.get("packageTotalInr") or 0)
+        if old_total <= 0:
+          estimate = self.package_total_inr_for_booking(booking, None)
+          old_total = int(estimate or 0)
+        per_person = old_total // old_people if old_people else old_total
+        new_total = per_person * people
+    else:
+      old_people = max(1, int(booking.get("numberOfPeople") or 1))
+      old_total = int(booking.get("packageTotalInr") or 0)
+      if old_total <= 0:
+        estimate = self.package_total_inr_for_booking(booking, None)
+        old_total = int(estimate or 0)
+      if old_total <= 0:
+        new_total = 0
+      else:
+        per_person = round(old_total / old_people)
+        new_total = per_person * people
+
+    advance = int(booking.get("advancePaymentInr") or 0)
+    balance = max(0, new_total - advance)
+    return {
+      "packageTotalInr": new_total,
+      "advancePaymentInr": advance,
+      "balanceDueInr": balance,
+    }
+
+  def _payment_status_after_member_update(self, booking: dict, totals: Dict[str, int]) -> str:
+    balance = int(totals["balanceDueInr"])
+    advance = int(totals["advancePaymentInr"])
+    if balance <= 0:
+      return "paid"
+    if advance > 0 or booking.get("payment") in ("paid", "advance_paid"):
+      return "advance_paid"
+    return "unpaid"
+
+  def update_booking_members(
+    self,
+    booking_id: str,
+    traveler_fields: Dict[str, Any],
+    new_people: int,
+    triggered_by: str,
+    old_people: int,
+  ) -> Optional[dict]:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return None
+    booking = self.find_booking_by_id(raw)
+    if not booking:
+      return None
+
+    totals = self.recalculate_booking_totals(booking, new_people)
+    payment_status = self._payment_status_after_member_update(booking, totals)
+    history_entry = {
+      "at": datetime.utcnow(),
+      "triggeredBy": triggered_by,
+      "oldPeople": old_people,
+      "newPeople": new_people,
+    }
+
+    unset_fields: Dict[str, str] = {}
+    for i in range(new_people + 1, 21):
+      unset_fields[f"traveler{i}"] = ""
+
+    update_set: Dict[str, Any] = {
+      "numberOfPeople": new_people,
+      **traveler_fields,
+      **totals,
+      "payment": payment_status,
+    }
+    if payment_status == "paid":
+      update_set["fullyPaidAt"] = datetime.utcnow()
+    elif booking.get("payment") == "paid" and payment_status == "advance_paid":
+      unset_fields["fullyPaidAt"] = ""
+
+    update_doc: Dict[str, Any] = {
+      "$set": update_set,
+      "$push": {"memberChangeHistory": history_entry},
+    }
+    if unset_fields:
+      update_doc["$unset"] = unset_fields
+
+    result = self.user_trip_collection.update_one({"$or": self._booking_id_clauses(raw)}, update_doc)
+    if not result.matched_count:
+      return None
+    refreshed = self.find_booking_by_id(raw)
+    if refreshed:
+      refreshed["_id"] = str(refreshed["_id"])
+    return refreshed
 
 
 mongo_service = MongoService()

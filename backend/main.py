@@ -1,5 +1,6 @@
 import hmac
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -13,8 +14,10 @@ from auth_utils import create_token, decode_token, hash_password, require_admin,
 from config import CORS_ORIGINS, HOST, IS_PRODUCTION, JWT_SECRET, PORT
 from logging_setup import configure_logging
 from models import (
+  AddMembersRequest,
   AdminConfirmBookingRequest,
   AdminConfirmPaymentFields,
+  AdminMarkFullPaymentRequest,
   AdminTripCreateRequest,
   AdminTripUpdateRequest,
   EmailOtpRequest,
@@ -47,6 +50,11 @@ def _inr_label(amount: int) -> str:
   return f"₹{n:,}"
 
 
+def _run_email_background(fn, *args, **kwargs) -> None:
+  """Send email off the request thread so admin actions return immediately."""
+  threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True).start()
+
+
 def _admin_confirm_booking_payment(
   booking_id: str,
   advance_payment_inr: int,
@@ -59,7 +67,12 @@ def _admin_confirm_booking_payment(
   if not booking:
     raise HTTPException(status_code=404, detail="booking not found")
   if booking.get("payment") == "paid":
-    raise HTTPException(status_code=400, detail="This booking is already confirmed.")
+    raise HTTPException(status_code=400, detail="This booking is already fully paid.")
+  if booking.get("payment") == "advance_paid":
+    raise HTTPException(
+      status_code=400,
+      detail="Advance already recorded. Use “Mark full payment received” when the balance is paid.",
+    )
 
   package_total = mongo_service.package_total_inr_for_booking(booking, trip_total_override)
   if package_total is None:
@@ -69,8 +82,8 @@ def _admin_confirm_booking_payment(
       "this catalogue booking no longer has a published price.",
     )
   advance = int(advance_payment_inr)
-  if advance < 0:
-    raise HTTPException(status_code=400, detail="Advance payment cannot be negative.")
+  if advance < 1:
+    raise HTTPException(status_code=400, detail="Enter the advance amount received (minimum ₹1).")
   if advance > package_total:
     raise HTTPException(
       status_code=400,
@@ -83,6 +96,7 @@ def _admin_confirm_booking_payment(
   if not ok:
     raise HTTPException(status_code=404, detail="booking not found")
 
+  payment_status = "paid" if balance <= 0 else "advance_paid"
   refreshed = mongo_service.find_booking_by_id(cleaned_id)
   traveler_email = ""
   if refreshed:
@@ -90,29 +104,77 @@ def _admin_confirm_booking_payment(
 
   payload_for_mail = refreshed or booking
   if traveler_email:
-    email_service.notify_booking_confirmed_traveler(
-      traveler_email,
-      payload_for_mail,
-      package_total_inr=package_total,
-      advance_payment_inr=advance,
-      balance_due_inr=balance,
-    )
+    if payment_status == "paid":
+      _run_email_background(
+        email_service.notify_full_payment_received_traveler,
+        traveler_email,
+        payload_for_mail,
+        package_total_inr=package_total,
+      )
+    else:
+      _run_email_background(
+        email_service.notify_booking_confirmed_traveler,
+        traveler_email,
+        payload_for_mail,
+        package_total_inr=package_total,
+        advance_payment_inr=advance,
+        balance_due_inr=balance,
+      )
   else:
-    logger.warning("booking %s confirmed but traveler has no email; skipping confirmation mail", cleaned_id)
+    logger.warning("booking %s payment recorded but traveler has no email; skipping mail", cleaned_id)
 
   logger.info(
-    "admin confirmed booking id=%s total=%s advance=%s balance=%s",
+    "admin recorded booking payment id=%s status=%s total=%s advance=%s balance=%s",
     cleaned_id,
+    payment_status,
     package_total,
     advance,
     balance,
   )
   return {
-    "message": "booking confirmed",
-    "payment": "paid",
+    "message": "booking confirmed" if payment_status == "paid" else "advance payment recorded",
+    "payment": payment_status,
     "package_total_inr": package_total,
     "advance_payment_inr": advance,
-    "balance_due_inr": balance,
+    "balance_due_inr": max(0, balance),
+  }
+
+
+def _admin_mark_booking_fully_paid(booking_id: str) -> Dict[str, Any]:
+  cleaned_id = (booking_id or "").strip()
+  if not cleaned_id:
+    raise HTTPException(status_code=404, detail="booking not found")
+  booking = mongo_service.find_booking_by_id(cleaned_id)
+  if not booking:
+    raise HTTPException(status_code=404, detail="booking not found")
+  if booking.get("payment") == "paid":
+    raise HTTPException(status_code=400, detail="This booking is already fully paid.")
+  if booking.get("payment") != "advance_paid":
+    raise HTTPException(status_code=400, detail="Record advance payment before marking full payment.")
+
+  updated = mongo_service.mark_booking_fully_paid(cleaned_id)
+  if not updated:
+    raise HTTPException(status_code=400, detail="Could not mark booking as fully paid.")
+
+  package_total = int(updated.get("packageTotalInr") or 0)
+  traveler_email = str(updated.get("email") or "").strip()
+  if traveler_email:
+    _run_email_background(
+      email_service.notify_full_payment_received_traveler,
+      traveler_email,
+      updated,
+      package_total_inr=package_total,
+    )
+  else:
+    logger.warning("booking %s fully paid but traveler has no email; skipping mail", cleaned_id)
+
+  logger.info("admin marked booking fully paid id=%s total=%s", cleaned_id, package_total)
+  return {
+    "message": "full payment recorded",
+    "payment": "paid",
+    "package_total_inr": package_total,
+    "advance_payment_inr": package_total,
+    "balance_due_inr": 0,
   }
 
 
@@ -146,7 +208,106 @@ def _notify_booking_created(doc: Dict[str, Any]) -> None:
     email_service.notify_booking_pending_traveler(inbox, doc, package_total_inr=estimate)
 
 
+def _booking_belongs_to_user(booking: dict, email: str, mobile: Optional[str]) -> bool:
+  b_email = str(booking.get("email") or "").strip().lower()
+  b_mobile = str(booking.get("mobile") or "").strip()
+  if b_email and b_email == email.strip().lower():
+    return True
+  if mobile and b_mobile and b_mobile == mobile.strip():
+    return True
+  return False
+
+
+def _apply_booking_member_update(
+  booking_id: str,
+  additional_travelers: List[str],
+  triggered_by: str,
+) -> Dict[str, Any]:
+  booking = mongo_service.find_booking_by_id(booking_id)
+  if not booking:
+    raise HTTPException(status_code=404, detail="booking not found")
+
+  old_people = max(1, int(booking.get("numberOfPeople") or 1))
+  new_people = old_people + len(additional_travelers)
+  if new_people > 20:
+    raise HTTPException(status_code=400, detail="Maximum 20 travelers per booking.")
+
+  old_package = int(booking.get("packageTotalInr") or 0)
+  old_advance = int(booking.get("advancePaymentInr") or 0)
+  old_balance = int(booking.get("balanceDueInr") or 0)
+  old_payment = str(booking.get("payment") or "unpaid")
+
+  existing: List[str] = []
+  if isinstance(booking.get("travelers"), list) and booking["travelers"]:
+    existing = [str(x) for x in booking["travelers"]]
+  else:
+    if booking.get("fullName"):
+      existing.append(str(booking["fullName"]))
+    for i in range(2, 21):
+      key = f"traveler{i}"
+      if booking.get(key):
+        existing.append(str(booking[key]))
+
+  if not existing:
+    raise HTTPException(status_code=400, detail="booking has no lead traveler on file")
+
+  primary = existing[0]
+  prior_extras = existing[1:]
+  all_extras = prior_extras + additional_travelers
+  tfields = _traveler_document_fields(primary, all_extras)
+
+  updated = mongo_service.update_booking_members(
+    booking_id,
+    tfields,
+    new_people,
+    triggered_by,
+    old_people,
+  )
+  if not updated:
+    raise HTTPException(status_code=404, detail="booking not found")
+
+  totals = mongo_service.recalculate_booking_totals(updated, new_people)
+  payment_status = mongo_service._payment_status_after_member_update(booking, totals)
+  _run_email_background(
+    email_service.notify_booking_members_updated,
+    updated,
+    old_people=old_people,
+    new_people=new_people,
+    package_total_inr=totals["packageTotalInr"],
+    advance_payment_inr=totals["advancePaymentInr"],
+    balance_due_inr=totals["balanceDueInr"],
+    added_names=additional_travelers,
+    triggered_by=triggered_by,
+    old_package_total_inr=old_package,
+    old_advance_payment_inr=old_advance,
+    old_balance_due_inr=old_balance,
+    old_payment_status=old_payment,
+  )
+
+  return {
+    "message": "travelers updated",
+    "number_of_people": new_people,
+    "payment": payment_status,
+    **totals,
+  }
+
+
 app = FastAPI(title="Wonder Baboon API")
+
+# Shown on GET /api/trips in development when MongoDB is unreachable (local UI testing).
+_DEV_SAMPLE_TRIPS: List[Dict[str, Any]] = [
+  {
+    "_id": "dev-sample-jibhi",
+    "title": "Jibhi Backpacking (dev sample)",
+    "location": "Jibhi, Himachal Pradesh",
+    "durationLabel": "4D / 3N",
+    "price": 4999,
+    "startDate": "2026-06-01",
+    "endDate": "2026-06-04",
+    "imageUrl": "./assets/lake.jpg",
+    "tripStyle": "backpackers",
+  },
+]
 
 _cors_kw: Dict[str, Any] = dict(
   allow_origins=CORS_ORIGINS,
@@ -295,7 +456,14 @@ def _require_user(authorization: Optional[str]) -> dict:
 
 @app.get("/api/trips")
 def list_trips():
-  return {"trips": mongo_service.list_published_trips()}
+  try:
+    mongo_service.ensure_ready()
+    return {"trips": mongo_service.list_published_trips()}
+  except RuntimeError as exc:
+    if IS_PRODUCTION:
+      raise
+    logger.warning("list_trips: Mongo unavailable in dev, returning sample trips: %s", exc)
+    return {"trips": _DEV_SAMPLE_TRIPS}
 
 
 @app.post("/api/bookings/guest")
@@ -434,6 +602,32 @@ def get_user_bookings(authorization: Optional[str] = Header(default=None)):
   return {"bookings": mongo_service.list_user_bookings(email, mobile)}
 
 
+@app.patch("/api/user/bookings/{booking_id}/members")
+def user_add_booking_members(
+  booking_id: str,
+  payload: AddMembersRequest,
+  authorization: Optional[str] = Header(default=None),
+):
+  token_payload = _require_user(authorization)
+  email = token_payload.get("email", "")
+  user = mongo_service.find_user_by_email(email)
+  if not user:
+    raise HTTPException(status_code=404, detail="user not found")
+
+  booking = mongo_service.find_booking_by_id(booking_id)
+  if not booking:
+    raise HTTPException(status_code=404, detail="booking not found")
+  if not _booking_belongs_to_user(booking, email, user.get("mobile")):
+    raise HTTPException(status_code=403, detail="not your booking")
+  if booking.get("payment") == "paid":
+    raise HTTPException(
+      status_code=400,
+      detail="This booking is fully paid. Contact Wonder Baboon to add more travelers.",
+    )
+
+  return _apply_booking_member_update(booking_id, payload.additional_travelers, "user")
+
+
 @app.post("/api/user/profile/email-otp/request")
 def request_email_otp(payload: EmailOtpRequest, authorization: Optional[str] = Header(default=None)):
   token_payload = _require_user(authorization)
@@ -547,6 +741,27 @@ def admin_confirm_booking_post(payload: AdminConfirmBookingRequest, _: dict = De
     payload.advance_payment_inr,
     payload.trip_total_inr,
   )
+
+
+@app.post("/api/admin/bookings/mark-full-payment")
+def admin_mark_full_payment(payload: AdminMarkFullPaymentRequest, _: dict = Depends(require_admin)):
+  return _admin_mark_booking_fully_paid(payload.booking_id)
+
+
+@app.delete("/api/admin/bookings/{booking_id}")
+def admin_delete_booking(booking_id: str, _: dict = Depends(require_admin)):
+  if not mongo_service.delete_booking(booking_id):
+    raise HTTPException(status_code=404, detail="booking not found")
+  return {"message": "booking deleted"}
+
+
+@app.patch("/api/admin/bookings/{booking_id}/members")
+def admin_add_booking_members(
+  booking_id: str,
+  payload: AddMembersRequest,
+  _: dict = Depends(require_admin),
+):
+  return _apply_booking_member_update(booking_id, payload.additional_travelers, "admin")
 
 
 @app.get("/api/admin/trips")

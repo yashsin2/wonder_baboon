@@ -1,3 +1,7 @@
+import type { TripStyleSlug } from "./trip-styles.js";
+
+export type { TripStyleSlug } from "./trip-styles.js";
+
 const ENV_API_BASE = (window as unknown as { __WB_API_BASE__?: string }).__WB_API_BASE__;
 /** Direct VPS IP in browser bar (legacy) */
 const SERVER_HOSTS = new Set(["72.60.200.102", ""]);
@@ -68,6 +72,8 @@ export interface Trip {
   imageUrl?: string;
   /** From DB when admin uploads a PDF itinerary */
   itineraryHtml?: string;
+  /** Backpackers / Motorcycle Diaries / etc. — see trip-styles.ts */
+  tripStyle?: TripStyleSlug;
 }
 
 export interface Booking {

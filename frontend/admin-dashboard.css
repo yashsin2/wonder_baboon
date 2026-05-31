@@ -28,23 +28,24 @@ body.admin-page {
   font-family: var(--font);
   background: var(--adm-bg);
   color: var(--adm-text);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .admin-layout {
-  display: grid;
-  grid-template-columns: var(--adm-sidebar-w) 1fr;
   min-height: 100vh;
+  height: 100vh;
 }
 
-@media (max-width: 960px) {
-  .admin-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ----- Sidebar ----- */
+/* ----- Sidebar (fixed — nav + log out always visible) ----- */
 .admin-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 200;
+  width: var(--adm-sidebar-w);
+  height: 100vh;
   background: var(--adm-sidebar);
   color: #f8fafc;
   padding: 24px 16px;
@@ -52,10 +53,28 @@ body.admin-page {
   flex-direction: column;
   gap: 8px;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-y: auto;
 }
 
 @media (max-width: 960px) {
+  body.admin-page {
+    height: auto;
+    overflow: auto;
+  }
+
+  .admin-layout {
+    height: auto;
+    min-height: 100vh;
+  }
+
   .admin-sidebar {
+    position: sticky;
+    top: 0;
+    left: auto;
+    bottom: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
@@ -187,11 +206,22 @@ body.admin-page {
   }
 }
 
-/* ----- Main ----- */
+/* ----- Main (scrolls independently of sidebar) ----- */
 .admin-main {
+  margin-left: var(--adm-sidebar-w);
+  height: 100vh;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .admin-main {
+    margin-left: 0;
+    height: auto;
+    overflow: visible;
+  }
 }
 
 .admin-main-header {
@@ -216,6 +246,16 @@ body.admin-page {
 .admin-main-body {
   padding: 24px 28px 40px;
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 960px) {
+  .admin-main-body {
+    overflow-y: visible;
+    min-height: auto;
+  }
 }
 
 .tab-content {
@@ -396,6 +436,11 @@ body.admin-page {
   color: #047857;
 }
 
+.badge-advance {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .badge-unpaid {
   background: #fef3c7;
   color: #b45309;
@@ -524,6 +569,18 @@ body.admin-page {
   gap: 8px;
 }
 
+.booking-admin-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.badge-style {
+  background: #1e3d2f;
+  color: #fff;
+}
+
 .booking-pay-panel {
   display: flex;
   flex-direction: column;
@@ -609,6 +666,33 @@ body.admin-page {
   color: #047857;
   text-align: center;
   padding: 10px 8px;
+}
+
+.booking-confirmed-label--advance {
+  color: #1d4ed8;
+}
+
+.btn-mark-full-payment {
+  margin-top: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 2px solid #047857;
+  background: #fff;
+  color: #047857;
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btn-mark-full-payment:hover:not(:disabled) {
+  background: #ecfdf5;
+}
+
+.btn-mark-full-payment:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .booking-item h4 {

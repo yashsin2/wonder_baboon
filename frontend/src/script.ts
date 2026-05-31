@@ -12,6 +12,7 @@ import {
   updateHeaderAuth,
 } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
+import { TRIP_STYLE_ORDER, TripStyleSlug } from "./trip-styles.js";
 
 interface SwiperInstance {
   destroy: (deleteInstance?: boolean, cleanStyles?: boolean) => void;
@@ -59,14 +60,32 @@ function scrollTripsIntoView(): void {
   document.getElementById("trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-const TRAVEL_STYLE_HINTS: Record<string, RegExp> = {
-  adventure: /trek|trekking|adventure|hike|hiking|camp|camping|mountain|summit|spiti|ladakh|peak|dharam/i,
-  cultural: /cultural|heritage|temple|palace|fort|history|varanasi|agra|delhi|rajasthan|city|golden triangle/i,
-  spiritual: /spiritual|wellness|yoga|meditat|rishikesh|ashram|pilgrim|dharam|dharma|peace/i,
-  wildlife: /wild|safari|tiger|national park|jungle|sanctuary|bird|corbett|kanha|forest/i,
-  luxury: /luxury|comfort|premium|resort|boutique|private/i,
-  budget: /budget|backpack|hostel|economy/i,
-};
+const TRAVEL_STYLE_SLUGS = new Set<string>(TRIP_STYLE_ORDER);
+
+/** Active vibe filter on home upcoming-trips chips (panel links still go to style pages). */
+let activeStyleChip: TripStyleSlug | "" = "backpackers";
+
+function syncStyleChipUi(): void {
+  document.querySelectorAll<HTMLElement>("[data-style-chip]").forEach((chip) => {
+    const isActive = chip.dataset.styleChip === activeStyleChip;
+    chip.classList.toggle("active", isActive);
+    chip.setAttribute("aria-pressed", isActive ? "true" : "false");
+  });
+  const heroEl = document.getElementById("heroTravelStyle") as HTMLSelectElement | null;
+  if (heroEl) heroEl.value = activeStyleChip;
+}
+
+function setupStyleChipFilters(): void {
+  document.querySelectorAll<HTMLElement>("[data-style-chip]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      const slug = (chip.dataset.styleChip || "").trim();
+      if (!slug || !TRAVEL_STYLE_SLUGS.has(slug)) return;
+      activeStyleChip = activeStyleChip === slug ? "" : (slug as TripStyleSlug);
+      syncStyleChipUi();
+      filterTripsAndReveal({ scroll: true });
+    });
+  });
+}
 
 function filterTripsCatalog(filters: { destination?: string; travelStyle?: string; date?: string }): Trip[] {
   let list = [...allTrips];
@@ -75,11 +94,8 @@ function filterTripsCatalog(filters: { destination?: string; travelStyle?: strin
     list = list.filter((trip) => tripMatchesTerm(trip, dest));
   }
   const style = (filters.travelStyle || "").trim().toLowerCase();
-  if (style) {
-    const re = TRAVEL_STYLE_HINTS[style];
-    if (re) {
-      list = list.filter((trip) => re.test(`${trip.title} ${trip.location}`));
-    }
+  if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+    list = list.filter((trip) => (trip.tripStyle || "backpackers") === style);
   }
   const dateStr = (filters.date || "").trim();
   if (dateStr) {
@@ -475,7 +491,8 @@ async function loadTrips(): Promise<void> {
     }
     if (!response.ok) throw new Error(await parseError(response, payload));
     allTrips = payload.trips || [];
-    renderTrips(allTrips);
+    syncStyleChipUi();
+    filterTripsAndReveal();
   } catch (error) {
     const msg =
       error instanceof TypeError && (error.message.includes("fetch") || error.message.includes("Load failed"))
@@ -489,8 +506,16 @@ async function loadTrips(): Promise<void> {
 
 function filterTripsAndReveal(opts?: { scroll?: boolean }): void {
   const term = (searchInput?.value || "").trim().toLowerCase();
-  const filtered = !term ? allTrips : allTrips.filter((trip) => tripMatchesTerm(trip, term));
-  const emptyHint = term && filtered.length === 0 ? "No trips match your search." : undefined;
+  let filtered = !term ? [...allTrips] : allTrips.filter((trip) => tripMatchesTerm(trip, term));
+  if (activeStyleChip) {
+    filtered = filtered.filter((trip) => (trip.tripStyle || "backpackers") === activeStyleChip);
+  }
+  const emptyHint =
+    filtered.length === 0
+      ? activeStyleChip || term
+        ? "No trips match this filter. Try another vibe or clear the search."
+        : undefined
+      : undefined;
   renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
   if (opts?.scroll) scrollTripsIntoView();
 }
@@ -502,8 +527,13 @@ function handleHeroFindTrips(): void {
   const travelStyle = travelStyleEl?.value?.trim() || "";
 
   if (!destination && !travelStyle && !dateOfTravel) {
-    showMessagePopup("Enter a destination, choose a travel style, or pick a date to search trips.", "error");
+    showMessagePopup("Enter a destination, choose a travel vibe, or pick a date to search trips.", "error");
     return;
+  }
+
+  if (travelStyle && TRAVEL_STYLE_SLUGS.has(travelStyle)) {
+    activeStyleChip = travelStyle as TripStyleSlug;
+    syncStyleChipUi();
   }
 
   const filtered = filterTripsCatalog({ destination, travelStyle, date: dateOfTravel });
@@ -705,6 +735,7 @@ function setupTripCardOpenDetail(): void {
     const trip = allTrips.find((item) => item._id === card.dataset.id);
     if (!trip) return;
     event.preventDefault();
+    event.stopPropagation();
     openTripDetailModal(trip);
   });
 }
@@ -714,6 +745,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupMobileMenu();
   attachSmoothScroll(document);
   setupParallax();
+  setupStyleChipFilters();
+  syncStyleChipUi();
   setupTripCardOpenDetail();
   setupItineraryButtons();
   await loadTrips();

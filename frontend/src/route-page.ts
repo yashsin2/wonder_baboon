@@ -81,9 +81,19 @@ function bookingItinerarySectionHtml(booking: Booking): string {
   return `<section class="booking-detail-itinerary"><h4>Itinerary</h4><div class="itinerary-modal-body booking-detail-itinerary-inner">${body}</div></section>`;
 }
 
-function openBookingDetailModal(booking: Booking): void {
+function userCanAddMembers(booking: Booking): boolean {
+  return booking.payment !== "paid";
+}
+
+function openBookingDetailModal(booking: Booking, options?: { allowAddMembers?: boolean }): void {
+  const allowAddMembers = (options?.allowAddMembers ?? false) && userCanAddMembers(booking);
   const dest = escapeHtml(String(booking.travelDestination ?? ""));
-  const pay = booking.payment === "paid" ? "Paid / confirmed" : "Pending payment";
+  const pay =
+    booking.payment === "paid"
+      ? "Fully paid"
+      : booking.payment === "advance_paid"
+        ? "Advance paid"
+        : "Pending payment";
   const tripBadge =
     booking.tripType === "defined_trip"
       ? `<span class="badge defined">Packaged trip</span>`
@@ -94,6 +104,11 @@ function openBookingDetailModal(booking: Booking): void {
       ? `<ol class="booking-detail-travelers">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ol>`
       : `<p class="muted">No traveler list on file for this booking.</p>`;
   const itineraryBlock = bookingItinerarySectionHtml(booking);
+  const maxAdd = Math.max(0, 20 - Number(booking.numberOfPeople || 1));
+  const addMembersBtn =
+    allowAddMembers && maxAdd > 0
+      ? `<button type="button" class="wb-primary booking-add-members-btn" id="bookingAddMembersBtn">Add more travelers</button>`
+      : "";
 
   const wrap = document.createElement("div");
   wrap.className = "wb-modal";
@@ -114,6 +129,21 @@ function openBookingDetailModal(booking: Booking): void {
             <div class="booking-detail-row"><span class="k">Booked on</span><span class="v">${escapeHtml(
               new Date(booking.createdAt).toLocaleDateString()
             )}</span></div>
+            ${
+              booking.packageTotalInr != null
+                ? `<div class="booking-detail-row"><span class="k">Package total</span><span class="v">₹${Number(booking.packageTotalInr).toLocaleString("en-IN")}</span></div>`
+                : ""
+            }
+            ${
+              booking.advancePaymentInr != null && bookingHasPayment(booking)
+                ? `<div class="booking-detail-row"><span class="k">Advance paid</span><span class="v">₹${Number(booking.advancePaymentInr).toLocaleString("en-IN")}</span></div>`
+                : ""
+            }
+            ${
+              booking.balanceDueInr != null && bookingHasPayment(booking)
+                ? `<div class="booking-detail-row"><span class="k">Balance due</span><span class="v">₹${Number(booking.balanceDueInr).toLocaleString("en-IN")}</span></div>`
+                : ""
+            }
           </div>
           <div>
             <div class="booking-detail-row"><span class="k">Contact</span><span class="v">${escapeHtml(
@@ -136,6 +166,7 @@ function openBookingDetailModal(booking: Booking): void {
           ${travelersHtml}
         </div>
         ${itineraryBlock}
+        ${addMembersBtn ? `<div class="booking-detail-actions">${addMembersBtn}</div>` : ""}
       </div>
     </div>`;
   document.body.appendChild(wrap);
@@ -144,12 +175,104 @@ function openBookingDetailModal(booking: Booking): void {
   wrap.addEventListener("click", (e) => {
     if (e.target === wrap) close();
   });
+  wrap.querySelector("#bookingAddMembersBtn")?.addEventListener("click", () => {
+    close();
+    openAddMembersModal(booking);
+  });
+}
+
+function openAddMembersModal(booking: Booking): void {
+  if (!userCanAddMembers(booking)) {
+    showMessagePopup(
+      "This booking is fully paid. Contact Wonder Baboon if you need to add more travelers.",
+      "error"
+    );
+    return;
+  }
+  const current = Number(booking.numberOfPeople || 1);
+  const maxAdd = Math.max(0, 20 - current);
+  if (maxAdd <= 0) {
+    showMessagePopup("Maximum 20 travelers per booking.", "error");
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "wb-modal";
+  wrap.innerHTML = `
+    <div class="wb-modal-card">
+      <div class="wb-modal-head">
+        <h3>Add travelers</h3>
+        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
+      </div>
+      <p class="muted">Currently ${current} traveler(s). You can add up to ${maxAdd} more. We'll email you an updated payment summary.</p>
+      <form id="userAddMembersForm">
+        <label>How many to add?</label>
+        <input id="userAddCount" type="number" min="1" max="${maxAdd}" value="1" required />
+        <div id="userAddNames"></div>
+        <div class="wb-modal-actions">
+          <button type="button" class="wb-cancel" id="userAddCancel">Cancel</button>
+          <button type="submit" class="wb-primary">Add & update total</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const namesEl = wrap.querySelector("#userAddNames") as HTMLElement;
+  const countEl = wrap.querySelector("#userAddCount") as HTMLInputElement;
+  const syncNames = (): void => {
+    const n = Math.min(maxAdd, Math.max(1, Number(countEl.value) || 1));
+    namesEl.innerHTML = Array.from({ length: n }, (_, i) => {
+      const num = current + i + 1;
+      return `<label>Traveler ${num} full name</label><input type="text" class="user-member-name" required minlength="2" />`;
+    }).join("");
+  };
+  syncNames();
+  countEl.addEventListener("input", syncNames);
+
+  const close = (): void => wrap.remove();
+  wrap.querySelector(".wb-modal-close")?.addEventListener("click", close);
+  wrap.querySelector("#userAddCancel")?.addEventListener("click", close);
+  wrap.addEventListener("click", (e) => {
+    if (e.target === wrap) close();
+  });
+
+  wrap.querySelector("#userAddMembersForm")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const names = Array.from(wrap.querySelectorAll<HTMLInputElement>(".user-member-name")).map((el) =>
+      el.value.trim()
+    );
+    if (names.some((n) => n.length < 2)) {
+      showMessagePopup("Each name must be at least 2 characters.", "error");
+      return;
+    }
+    try {
+      const res = await apiFetch(`/user/bookings/${encodeURIComponent(booking._id)}/members`, {
+        method: "PATCH",
+        body: JSON.stringify({ additional_travelers: names }),
+      });
+      if (!res.ok) throw new Error(await parseError(res));
+      close();
+      showSuccessModal(
+        "Travelers added",
+        "Your tribe size was updated. Check your email for the new payment breakdown."
+      );
+      if (page === "upcoming") await mountBookingsPage("upcoming");
+    } catch (error) {
+      showMessagePopup(error instanceof Error ? error.message : "Could not add travelers", "error");
+    }
+  });
+}
+
+function bookingHasPayment(booking: Booking): boolean {
+  return booking.payment === "paid" || booking.payment === "advance_paid";
 }
 
 function upcomingPaymentNote(booking: Booking): string {
-  const paid = booking.payment === "paid";
-  if (paid) {
-    return `<p class="route-booking-payment route-booking-payment--confirmed">Booking confirmed.</p>`;
+  if (booking.payment === "paid") {
+    return `<p class="route-booking-payment route-booking-payment--confirmed">Fully paid — you're all set.</p>`;
+  }
+  if (booking.payment === "advance_paid") {
+    return `<p class="route-booking-payment route-booking-payment--confirmed">Advance received — balance due before travel.</p>`;
   }
   return `<p class="route-booking-payment route-booking-payment--pending">Your booking will be confirmed after advance payment.</p>`;
 }
@@ -403,7 +526,7 @@ function registerBookingCardInteraction(): void {
     const id = article.getAttribute("data-booking-id");
     if (!id || !bookingDetailById.has(id)) return;
     event.preventDefault();
-    openBookingDetailModal(bookingDetailById.get(id)!);
+    openBookingDetailModal(bookingDetailById.get(id)!, { allowAddMembers: page === "upcoming" });
   };
   document.getElementById("upcomingList")?.addEventListener("click", handler);
   document.getElementById("previousList")?.addEventListener("click", handler);

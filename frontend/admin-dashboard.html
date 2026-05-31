@@ -18,7 +18,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Admin Dashboard - Wonder Baboon</title>
-  <link rel="stylesheet" href="./admin-dashboard.css?v=wb20260517">
+  <link rel="stylesheet" href="./admin-dashboard.css?v=adm-sidebar-fix">
 </head>
 <body class="admin-page">
   <div class="admin-layout">
@@ -48,7 +48,7 @@
           <div class="dashboard-charts-row">
             <div class="chart-card">
               <h2>Confirmed vs pending</h2>
-              <p class="chart-caption">Paid (confirmed) versus unpaid bookings</p>
+              <p class="chart-caption">Fully paid, advance paid, and unpaid bookings</p>
               <div class="chart-wrap">
                 <canvas id="statsConfirmationDonut" aria-label="Payment confirmation chart"></canvas>
               </div>
@@ -126,6 +126,18 @@
 
               <div class="form-row full">
                 <div class="form-group">
+                  <label for="tripStyle">Trip style / category</label>
+                  <select id="tripStyle" required>
+                    <option value="backpackers">The Backpackers</option>
+                    <option value="motorcycle_diaries">The Motorcycle Diaries</option>
+                    <option value="dolce_far_niente">Dolce far niente</option>
+                    <option value="hikers">The Hikers</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row full">
+                <div class="form-group">
                   <label for="tripImageName">Image file name in assets/ (e.g. nagtibba3.JPG)</label>
                   <input id="tripImageName" type="text" placeholder="lake.jpg" required autocomplete="off">
                 </div>
@@ -158,6 +170,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script type="module" src="./js/admin-dashboard.js?v=wb20260517"></script>
+  <script type="module" src="./js/admin-dashboard.js?v=4f934e3"></script>
+  <script src="/version-check.js?v=4f934e3" defer></script>
 </body>
 </html>

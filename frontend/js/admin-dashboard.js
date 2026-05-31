@@ -1,4 +1,5 @@
 import { API_BASE_URL, getSession, parseError, ROUTES } from "./config.js";
+import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "admin") {
     window.location.href = ROUTES.auth;
@@ -13,14 +14,49 @@ let lastBookingSearch = "";
 function getChartCtor() {
     return window.Chart;
 }
-function bookingIsPaid(booking) {
-    return booking.payment === "paid";
+function effectivePaymentStatus(booking) {
+    const raw = String(booking.payment ?? "unpaid");
+    const balance = Number(booking.balanceDueInr ?? 0);
+    if (raw === "paid" && balance > 0)
+        return "advance_paid";
+    if (raw === "advance_paid" && balance <= 0 && Number(booking.packageTotalInr ?? 0) > 0)
+        return "paid";
+    return raw;
+}
+function bookingIsFullyPaid(booking) {
+    return effectivePaymentStatus(booking) === "paid";
+}
+function bookingIsAdvancePaid(booking) {
+    return effectivePaymentStatus(booking) === "advance_paid";
+}
+function bookingHasPaymentRecorded(booking) {
+    return bookingIsFullyPaid(booking) || bookingIsAdvancePaid(booking);
 }
 function paymentBadgeClass(booking) {
-    return bookingIsPaid(booking) ? "badge-paid" : "badge-unpaid";
+    if (bookingIsFullyPaid(booking))
+        return "badge-paid";
+    if (bookingIsAdvancePaid(booking))
+        return "badge-advance";
+    return "badge-unpaid";
 }
 function paymentBadgeText(booking) {
-    return bookingIsPaid(booking) ? "Paid" : "Unpaid";
+    if (bookingIsFullyPaid(booking))
+        return "Paid";
+    if (bookingIsAdvancePaid(booking))
+        return "Advance paid";
+    return "Unpaid";
+}
+function bookingPaymentBreakdownHtml(booking) {
+    if (!bookingHasPaymentRecorded(booking) || booking.packageTotalInr == null)
+        return "";
+    return `
+    <div class="booking-pay-history">
+      <span>Total ₹${Number(booking.packageTotalInr).toLocaleString("en-IN")}</span>
+      ·
+      <span>Advance ₹${Number(booking.advancePaymentInr ?? 0).toLocaleString("en-IN")}</span>
+      ·
+      <span>Balance ₹${Number(booking.balanceDueInr ?? 0).toLocaleString("en-IN")}</span>
+    </div>`;
 }
 /** Whole rupees; empty field → undefined */
 function parseRupeeField(raw) {
@@ -60,8 +96,13 @@ function syncBookingConfirmPanel(panel) {
     const valid = packageTotal !== undefined &&
         packageTotal >= 1 &&
         advance !== undefined &&
+        advance >= 1 &&
         advance <= packageTotal;
     btn.disabled = !valid;
+    btn.textContent =
+        packageTotal !== undefined && advance !== undefined && advance >= packageTotal
+            ? "Record full payment"
+            : "Record advance";
 }
 function escapeHtml(raw) {
     return raw
@@ -87,6 +128,17 @@ function bookingTravelersSummary(booking) {
 }
 let lastTripManageSearch = "";
 let lastTripManageRows = [];
+function tripStyleLabel(raw) {
+    return TRIP_STYLES[normalizeTripStyle(raw)].shortLabel;
+}
+function tripStyleSelectOptions(selected) {
+    const sel = normalizeTripStyle(selected);
+    return TRIP_STYLE_ORDER.map((slug) => {
+        const cfg = TRIP_STYLES[slug];
+        return `<option value="${slug}" ${slug === sel ? "selected" : ""}>${cfg.title}</option>`;
+    })
+        .join("");
+}
 function imageBasenameFromTripUrl(url) {
     if (!url)
         return "";
@@ -120,6 +172,96 @@ async function deleteTripById(tripId) {
     if (!response.ok)
         throw new Error(await parseError(response));
 }
+async function deleteBookingById(bookingId) {
+    const response = await fetch(`${API_BASE_URL}/admin/bookings/${encodeURIComponent(bookingId)}`, {
+        method: "DELETE",
+        headers: authHeaders,
+    });
+    if (!response.ok)
+        throw new Error(await parseError(response));
+}
+async function addBookingMembers(bookingId, additionalTravelers) {
+    const response = await fetch(`${API_BASE_URL}/admin/bookings/${encodeURIComponent(bookingId)}/members`, {
+        method: "PATCH",
+        headers: authHeaders,
+        body: JSON.stringify({ additional_travelers: additionalTravelers }),
+    });
+    if (!response.ok)
+        throw new Error(await parseError(response));
+}
+function openAddMembersModal(booking) {
+    const id = String(booking._id ?? "");
+    const current = Number(booking.numberOfPeople ?? 1);
+    const maxAdd = Math.max(0, 20 - current);
+    if (maxAdd <= 0) {
+        window.alert("This booking already has the maximum of 20 travelers.");
+        return;
+    }
+    document.getElementById("bookingMembersModal")?.remove();
+    const wrap = document.createElement("div");
+    wrap.id = "bookingMembersModal";
+    wrap.className = "admin-modal-overlay";
+    wrap.innerHTML = `
+    <div class="admin-modal" role="dialog" aria-modal="true">
+      <h3>Add travelers</h3>
+      <p class="form-hint">Current headcount: ${current}. Add up to ${maxAdd} more.</p>
+      <form id="bookingMembersForm" class="admin-modal-form">
+        <label>How many to add?<input name="count" type="number" min="1" max="${maxAdd}" value="1" required /></label>
+        <div id="bookingMembersNames"></div>
+        <div class="admin-modal-actions">
+          <button type="button" class="btn-cancel" id="bookingMembersCancel">Cancel</button>
+          <button type="submit" class="form-submit" id="bookingMembersSubmit">Save & notify</button>
+        </div>
+      </form>
+    </div>`;
+    document.body.appendChild(wrap);
+    const namesEl = wrap.querySelector("#bookingMembersNames");
+    const countEl = wrap.querySelector('input[name="count"]');
+    const syncNames = () => {
+        if (!namesEl || !countEl)
+            return;
+        const n = Math.min(maxAdd, Math.max(1, Number(countEl.value) || 1));
+        namesEl.innerHTML = Array.from({ length: n }, (_, i) => {
+            const num = current + i + 1;
+            return `<label>Traveler ${num} full name<input type="text" class="member-name-input" required minlength="2" /></label>`;
+        }).join("");
+    };
+    syncNames();
+    countEl?.addEventListener("input", syncNames);
+    const close = () => wrap.remove();
+    wrap.querySelector("#bookingMembersCancel")?.addEventListener("click", close);
+    wrap.addEventListener("click", (e) => {
+        if (e.target === wrap)
+            close();
+    });
+    wrap.querySelector("#bookingMembersForm")?.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const submitBtn = wrap.querySelector("#bookingMembersSubmit");
+        const names = Array.from(wrap.querySelectorAll(".member-name-input")).map((el) => el.value.trim());
+        if (names.some((n) => n.length < 2)) {
+            window.alert("Each name must be at least 2 characters.");
+            return;
+        }
+        const prevLabel = submitBtn?.textContent || "Save & notify";
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Sending…";
+        }
+        try {
+            await addBookingMembers(id, names);
+            close();
+            const [, bookings] = await Promise.all([loadStats(), fetchBookings(lastBookingSearch)]);
+            renderBookingList(bookings);
+        }
+        catch (err) {
+            window.alert(err instanceof Error ? err.message : "Could not add travelers");
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = prevLabel;
+            }
+        }
+    });
+}
 async function patchTrip(tripId, body) {
     const response = await fetch(`${API_BASE_URL}/admin/trips/${encodeURIComponent(tripId)}`, {
         method: "PATCH",
@@ -142,12 +284,14 @@ function renderTripManageList(trips) {
         const id = escapeHtml(String(trip._id));
         const hasItin = Boolean((trip.itineraryHtml || "").trim().length);
         const pub = trip.published !== false;
+        const styleLabel = tripStyleLabel(trip.tripStyle);
         return `
     <div class="trip-manage-row" data-trip-row="${id}">
       <div class="trip-manage-main">
         <strong>${escapeHtml(trip.title)}</strong>
         <span class="trip-manage-meta">${escapeHtml(trip.location)} · ${escapeHtml(trip.durationLabel)} · ₹${Number(trip.price).toLocaleString("en-IN")}</span>
         <span class="trip-manage-badges">
+          <span class="badge-itin badge-style">${escapeHtml(styleLabel)}</span>
           <span class="badge-itin ${hasItin ? "badge-itin--yes" : "badge-itin--no"}">${hasItin ? "PDF itinerary" : "No itinerary"}</span>
           <span class="badge-itin ${pub ? "badge-pub--yes" : "badge-pub--no"}">${pub ? "Published" : "Hidden"}</span>
         </span>
@@ -198,6 +342,7 @@ function openEditTripModal(trip) {
         <label>Price (₹)<input name="price" type="number" min="0" required value="${Number(trip.price)}" /></label>
         <label>Start date<input name="start_date" type="date" required value="${escapeHtml(String(trip.startDate || "").slice(0, 10))}" /></label>
         <label>End date<input name="end_date" type="date" required value="${escapeHtml(String((trip.endDate || trip.startDate) || "").slice(0, 10))}" /></label>
+        <label>Trip style<select name="trip_style" required>${tripStyleSelectOptions(trip.tripStyle)}</select></label>
         <label>Image file in assets/<input name="image_name" required value="${escapeHtml(imageFile)}" /></label>
         <label class="checkbox-row"><input name="published" type="checkbox" ${trip.published !== false ? "checked" : ""} /> Published (show on website)</label>
         <div class="admin-modal-actions">
@@ -226,6 +371,7 @@ function openEditTripModal(trip) {
             end_date: String(fd.get("end_date") || ""),
             image_name: String(fd.get("image_name") || "").trim(),
             published: fd.get("published") === "on",
+            trip_style: String(fd.get("trip_style") || "backpackers"),
         };
         const saveBtn = wrap.querySelector("#tripEditSave");
         saveBtn.disabled = true;
@@ -296,16 +442,17 @@ function renderConfirmationDonut(data) {
     if (!ChartCtor || !canvas)
         return;
     const paid = Number(data.paidBookings) || 0;
+    const advancePaid = Number(data.advancePaidBookings) || 0;
     const unpaid = data.unpaidBookings !== undefined && data.unpaidBookings !== null
         ? Number(data.unpaidBookings)
-        : Math.max(0, Number(data.totalBookings) - paid);
+        : Math.max(0, Number(data.totalBookings) - paid - advancePaid);
     if (confirmationChart) {
         confirmationChart.destroy();
         confirmationChart = null;
     }
-    const labels = ["Paid (confirmed)", "Unpaid (pending)"];
-    const values = [paid, unpaid];
-    let colors = ["#0f766e", "#cbd5e1"];
+    const labels = ["Fully paid", "Advance paid", "Unpaid (pending)"];
+    const values = [paid, advancePaid, unpaid];
+    let colors = ["#0f766e", "#2563eb", "#cbd5e1"];
     const sum = values.reduce((a, b) => a + b, 0);
     if (sum === 0) {
         labels.length = 0;
@@ -409,7 +556,11 @@ async function loadStats() {
       </div>
       <div class="stat-card">
         <h3>${data.paidBookings ?? 0}</h3>
-        <p>Paid / confirmed</p>
+        <p>Fully paid</p>
+      </div>
+      <div class="stat-card">
+        <h3>${data.advancePaidBookings ?? 0}</h3>
+        <p>Advance paid</p>
       </div>
       <div class="stat-card">
         <h3>${data.unpaidBookings ?? 0}</h3>
@@ -418,10 +569,6 @@ async function loadStats() {
       <div class="stat-card">
         <h3>${data.monthBookings}</h3>
         <p>Bookings this month</p>
-      </div>
-      <div class="stat-card period">
-        <h3>${escapeHtml(String(data.currentMonth ?? "—"))}</h3>
-        <p>Reporting period</p>
       </div>
     `;
         grid.innerHTML = html;
@@ -478,20 +625,20 @@ function renderBookingList(bookings) {
     const html = bookings
         .map((booking) => {
         const id = escapeHtml(String(booking._id ?? ""));
-        const paid = bookingIsPaid(booking);
-        const breakdown = bookingIsPaid(booking) && booking.packageTotalInr != null
-            ? `
-            <div class="booking-pay-history">
-              <span>Total ₹${Number(booking.packageTotalInr).toLocaleString("en-IN")}</span>
-              ·
-              <span>Advance ₹${Number(booking.advancePaymentInr ?? 0).toLocaleString("en-IN")}</span>
-              ·
-              <span>Balance ₹${Number(booking.balanceDueInr ?? 0).toLocaleString("en-IN")}</span>
-            </div>`
-            : "";
+        const fullyPaid = bookingIsFullyPaid(booking);
+        const advancePaid = bookingIsAdvancePaid(booking);
+        const breakdown = bookingPaymentBreakdownHtml(booking);
         let confirmBlock = "";
-        if (paid) {
-            confirmBlock = `<span class="booking-confirmed-label">Confirmed</span>${breakdown}`;
+        if (fullyPaid) {
+            confirmBlock = `<span class="booking-confirmed-label">Fully paid</span>${breakdown}`;
+        }
+        else if (advancePaid) {
+            confirmBlock = `
+          <span class="booking-confirmed-label booking-confirmed-label--advance">Advance received</span>
+          ${breakdown}
+          <button type="button" class="btn-mark-full-payment" data-mark-full-payment="${id}">
+            Mark full payment received
+          </button>`;
         }
         else {
             const typed = booking;
@@ -515,7 +662,7 @@ function renderBookingList(bookings) {
             <label class="booking-pay-field-label">Advance received (₹)<input type="number" inputmode="numeric" min="0" step="1" class="booking-pay-field" placeholder="0" data-advance-inr /></label>
             <p class="booking-balance-preview" data-balance-preview>Balance due: —</p>
             <button type="button" class="btn-confirm-booking" data-confirm-booking="${id}" disabled>
-              Confirm booking
+              Record advance
             </button>
           </div>`;
         }
@@ -537,7 +684,13 @@ function renderBookingList(bookings) {
             <div class="booking-detail"><strong>Travel date:</strong> ${new Date(String(booking.dateOfTravel ?? "")).toLocaleDateString()}</div>
             <div class="booking-detail"><strong>Booked on:</strong> ${new Date(String(booking.createdAt ?? "")).toLocaleDateString()}</div>
           </div>
-          <div class="booking-item-actions">${confirmBlock}</div>
+          <div class="booking-item-actions">
+            ${confirmBlock}
+            <div class="booking-admin-tools">
+              <button type="button" class="btn-second" data-add-members="${id}">Add travelers</button>
+              <button type="button" class="btn-danger-outline" data-delete-booking="${id}">Delete booking</button>
+            </div>
+          </div>
         </div>
       `;
     })
@@ -612,6 +765,7 @@ document.getElementById("tripForm").addEventListener("submit", async (event) => 
             end_date: document.getElementById("tripEndDate").value,
             image_name: document.getElementById("tripImageName").value.trim(),
             published: true,
+            trip_style: document.getElementById("tripStyle").value,
         };
         const pdfInput = document.getElementById("newTripItineraryPdf");
         const pdfFile = pdfInput?.files?.[0] ?? null;
@@ -654,7 +808,67 @@ document.getElementById("bookingList").addEventListener("input", (e) => {
         syncBookingConfirmPanel(panel);
 }, true);
 document.getElementById("bookingList").addEventListener("click", async (e) => {
-    const trigger = e.target.closest("[data-confirm-booking]");
+    const target = e.target;
+    const delBtn = target.closest("[data-delete-booking]");
+    if (delBtn) {
+        const id = delBtn.getAttribute("data-delete-booking");
+        if (!id)
+            return;
+        if (!window.confirm("Delete this booking permanently? This cannot be undone. Use only for spam or mistaken submissions."))
+            return;
+        try {
+            await deleteBookingById(id);
+            await loadStats();
+            const bookings = await fetchBookings(lastBookingSearch);
+            renderBookingList(bookings);
+            if (lastBookingSearch === "")
+                renderRecentBookings(bookings);
+        }
+        catch (err) {
+            window.alert(err instanceof Error ? err.message : "Delete failed");
+        }
+        return;
+    }
+    const addBtn = target.closest("[data-add-members]");
+    if (addBtn) {
+        const id = addBtn.getAttribute("data-add-members");
+        if (!id)
+            return;
+        const bookings = await fetchBookings(lastBookingSearch);
+        const booking = bookings.find((b) => String(b._id) === id);
+        if (booking)
+            openAddMembersModal(booking);
+        return;
+    }
+    const markBtn = target.closest("[data-mark-full-payment]");
+    if (markBtn instanceof HTMLButtonElement) {
+        const id = markBtn.getAttribute("data-mark-full-payment");
+        if (!id || markBtn.disabled)
+            return;
+        if (!window.confirm("Mark this booking as fully paid? The traveler will be emailed that the remaining balance is ₹0.")) {
+            return;
+        }
+        markBtn.disabled = true;
+        const prevLabel = markBtn.textContent || "Mark full payment received";
+        markBtn.textContent = "Updating…";
+        try {
+            await fetchJson(`${API_BASE_URL}/admin/bookings/mark-full-payment`, {
+                method: "POST",
+                body: JSON.stringify({ booking_id: id }),
+            });
+            const [, bookings] = await Promise.all([loadStats(), fetchBookings(lastBookingSearch)]);
+            renderBookingList(bookings);
+            if (lastBookingSearch === "")
+                renderRecentBookings(bookings);
+        }
+        catch (err) {
+            window.alert(err instanceof Error ? err.message : "Could not mark full payment");
+            markBtn.disabled = false;
+            markBtn.textContent = prevLabel;
+        }
+        return;
+    }
+    const trigger = target.closest("[data-confirm-booking]");
     if (!trigger || !(trigger instanceof HTMLButtonElement))
         return;
     const id = trigger.getAttribute("data-confirm-booking");
@@ -680,13 +894,14 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
     if (trip_total_inr !== undefined)
         payload.trip_total_inr = trip_total_inr;
     trigger.disabled = true;
+    const prevConfirmLabel = trigger.textContent || "Record advance";
+    trigger.textContent = "Saving…";
     try {
         await fetchJson(`${API_BASE_URL}/admin/bookings/confirm-payment`, {
             method: "POST",
             body: JSON.stringify(payload),
         });
-        await loadStats();
-        const bookings = await fetchBookings(lastBookingSearch);
+        const [, bookings] = await Promise.all([loadStats(), fetchBookings(lastBookingSearch)]);
         renderBookingList(bookings);
         if (lastBookingSearch === "") {
             renderRecentBookings(bookings);
@@ -695,6 +910,7 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
     catch (err) {
         window.alert(err instanceof Error ? err.message : "Could not confirm booking");
         trigger.disabled = false;
+        trigger.textContent = prevConfirmLabel;
         if (panel instanceof HTMLElement)
             syncBookingConfirmPanel(panel);
     }

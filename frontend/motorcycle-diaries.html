@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function () {
+    var p = location.pathname;
+    if (/\.html$/i.test(p)) {
+      history.replaceState(null, "", p.replace(/\.html$/i, "") + location.search + location.hash);
+    }
+    var h = location.hostname;
+    if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
+      window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";
+    }
+  })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Motorcycle Diaries · Wonder Baboon</title>
+  <link rel="stylesheet" href="./styles.css?v=cinematic-v1" />
+  <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&family=Outfit:wght@500;600;700&family=Permanent+Marker&display=swap" rel="stylesheet" />
+</head>
+<body data-page="motorcycle-diaries" data-trip-style="motorcycle_diaries">
+  <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+    <span></span><span></span><span></span>
+  </button>
+
+  <header class="site-header simple-header">
+    <div class="header-container">
+      <a class="logo" href="/">
+        <img src="./assets/logo.png" alt="Wonder Baboon" />
+        <div class="logo-text-block">
+          <span class="logo-text" id="stylePageHeaderTitle">Motorcycle Diaries</span>
+          <span class="logo-greeting" id="logoGreeting"></span>
+        </div>
+      </a>
+      <a class="header-home-link" href="/">← Home</a>
+    </div>
+  </header>
+
+  <main class="trip-style-page">
+    <section id="tripStylePageHero" class="trip-style-page-hero style-motorcycle" aria-labelledby="tripStylePageTitle"></section>
+    <section class="trip-style-trips-section">
+      <div class="trip-style-trips-head">
+        <h2>Trips in this collection</h2>
+        <p id="styleTripsCount" class="style-trips-count">Loading…</p>
+      </div>
+      <p class="style-trips-scroll-hint" aria-hidden="true">Swipe trips ←</p>
+      <div id="styleTripsGrid" class="style-trips-grid style-trips-grid--scroll"></div>
+    </section>
+  </main>
+
+  <aside class="user-panel" id="userPanel" aria-hidden="true">
+    <div class="user-panel-overlay" data-panel-close></div>
+    <div class="user-panel-drawer" role="dialog" aria-label="Wonder Baboon menu">
+      <header class="user-panel-head">
+        <button class="user-panel-close" data-panel-close aria-label="Close panel">&times;</button>
+        <div class="up-head-row">
+          <div class="up-avatar" id="panelAvatar" aria-hidden="true"><img src="./assets/logo.png" alt="Wonder Baboon" /></div>
+          <div class="up-head-text">
+            <h3 id="panelTitle">Wonder Baboon</h3>
+            <p id="panelGreeting" class="up-greeting">Welcome, traveler</p>
+          </div>
+        </div>
+      </header>
+      <nav class="up-nav" data-panel-nav>
+        <a class="up-nav-item" href="/" data-page="home"><span class="up-icon">🏠</span> Home</a>
+        <a class="up-nav-item" href="/upcoming-trips" data-page="upcoming"><span class="up-icon">📅</span> Your trips</a>
+        <a class="up-nav-item" href="/previous-trips" data-page="previous"><span class="up-icon">🗺️</span> Previous Trips</a>
+        <a class="up-nav-item" href="/settings" data-page="settings"><span class="up-icon">⚙️</span> Settings</a>
+        <div class="up-nav-section">
+          <p class="up-nav-section-label">Explore by vibe</p>
+          <a class="up-nav-item up-nav-item--sub" href="/backpackers" data-page="backpackers"><span>The Backpackers</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/motorcycle-diaries" data-page="motorcycle-diaries"><span>The Motorcycle Diaries</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/dolce-far-niente" data-page="dolce-far-niente"><span>Dolce far niente</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/hikers" data-page="hikers"><span>The Hikers</span></a>
+        </div>
+      </nav>
+      <footer class="user-panel-foot" id="userPanelFoot">
+        <a href="/auth" class="up-footer-btn up-login-btn">Login / Sign up</a>
+      </footer>
+    </div>
+  </aside>
+
+  <script type="module" src="./js/trip-style-page.js?v=cinematic-v1"></script>
+  <script type="module" src="./js/user-panel.js?v=4f934e3"></script>
+  <script src="/version-check.js?v=4f934e3" defer></script>
+</body>
+</html>
