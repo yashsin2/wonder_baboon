@@ -87,6 +87,19 @@ def create_order(
     raise RazorpayOrderError(str(error)) from error
 
 
+def order_exists_on_account(order_id: str) -> bool:
+  """True if this order_id exists for the current KEY_ID / KEY_SECRET (live vs test must match)."""
+  oid = (order_id or "").strip()
+  if not oid:
+    return False
+  try:
+    _get_client().order.fetch(oid)
+    return True
+  except Exception as error:
+    logger.info("Razorpay order.fetch %s failed: %s", oid, error)
+    return False
+
+
 def verify_payment_signature(order_id: str, payment_id: str, signature: str) -> bool:
   """
   Standard Checkout verification: HMAC-SHA256(order_id|payment_id, KEY_SECRET).

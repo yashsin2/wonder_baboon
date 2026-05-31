@@ -3,6 +3,10 @@
   RewriteEngine On
   RewriteBase /
 
+  # One canonical host (API CORS + Razorpay are configured for wonderbaboon.com)
+  RewriteCond %{HTTP_HOST} ^www\.wonderbaboon\.com$ [NC]
+  RewriteRule ^ https://wonderbaboon.com%{REQUEST_URI} [R=301,L]
+
   # Legacy dashboard → Your trips (before generic .html redirects)
   RewriteRule ^user-dashboard\.html$ /upcoming-trips [R=301,L,NC]
   RewriteRule ^user-dashboard/?$ /upcoming-trips [R=301,L,NC]

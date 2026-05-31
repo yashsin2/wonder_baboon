@@ -12,6 +12,7 @@ declare global {
 export interface RazorpayConfig {
   enabled: boolean;
   key_id: string;
+  test_mode?: boolean;
   advance_percent: number;
   advance_refund_days?: number;
   requires_payment_to_confirm?: boolean;
@@ -135,8 +136,18 @@ function isProviderSetupError(message: string): boolean {
   const m = message.toLowerCase();
   return (
     /razorpay authentication|razorpay api keys|authentication failed|invalid.*key|401/i.test(m) ||
-    /could not create razorpay order/i.test(m)
+    /could not create razorpay order|could not attach payment order|could not create payment order/i.test(
+      m
+    ) ||
+    /does not exist|bad_request_error|invalid.*order/i.test(m) ||
+    /connection reset|connection aborted|network|failed to fetch|load failed|cors/i.test(m) ||
+    /live razorpay keys cannot|checkout closed before payment/i.test(m)
   );
+}
+
+function isNetworkOrCorsError(message: string): boolean {
+  const m = message.toLowerCase();
+  return /failed to fetch|networkerror|load failed|network request|cors/i.test(m);
 }
 
 export type BookingPaymentHooks = {
@@ -177,6 +188,25 @@ export async function payAdvanceForBooking(
 
   const amountPaise = Number(order.amount ?? order.amount_paise ?? 0);
   const currency = order.currency || "INR";
+  if (!order.order_id || !order.key_id) {
+    throw new Error("Could not start Razorpay checkout (missing order). Try again.");
+  }
+  if (!Number.isFinite(amountPaise) || amountPaise < 100) {
+    throw new Error(
+      `Could not start Razorpay checkout (invalid amount ₹${Math.round(amountPaise / 100)}). Contact Wonder Baboon.`
+    );
+  }
+
+  const host = window.location.hostname;
+  const isLocal =
+    host === "localhost" || host === "127.0.0.1" || /^192\.168\.\d+\.\d+$/.test(host);
+  if (isLocal && order.key_id.startsWith("rzp_live_")) {
+    const err = new Error(
+      "Live Razorpay keys cannot open checkout on localhost. Put rzp_test_ keys in .env for local dev, or test on https://wonderbaboon.com."
+    );
+    (err as Error & { providerSetup?: boolean }).providerSetup = true;
+    throw err;
+  }
 
   hooks?.onAwaitingPayment?.();
 
@@ -211,7 +241,7 @@ export async function payAdvanceForBooking(
       finish(() => resolve(verified));
     };
 
-    const rzp = new window.Razorpay({
+    const checkoutOptions: Record<string, unknown> = {
       key: order.key_id,
       amount: amountPaise,
       currency,
@@ -224,6 +254,9 @@ export async function payAdvanceForBooking(
         contact: contact.mobile || "",
       },
       theme: { color: "#c4e538" },
+    };
+    const rzp = new window.Razorpay({
+      ...checkoutOptions,
       handler: (response: Record<string, string>) => {
         checkoutPhase = "paying";
         void verifyOnServer(response).catch((err: unknown) => {
@@ -234,32 +267,45 @@ export async function payAdvanceForBooking(
       },
       modal: {
         ondismiss: () => {
-          // Razorpay may call ondismiss when the modal closes after success — ignore unless still open.
           window.setTimeout(() => {
             if (checkoutPhase !== "open") return;
-            finish(() => {
-              const e = new Error("Payment cancelled");
-              (e as Error & { cancelled?: boolean }).cancelled = true;
-              reject(e);
-            });
-          }, 2500);
+            const e = new Error(
+              "Razorpay closed before payment completed. If the payment window never appeared, use test keys (rzp_test_) on localhost or check your domain in the Razorpay Dashboard."
+            );
+            (e as Error & { providerSetup?: boolean }).providerSetup = true;
+            finish(() => reject(e));
+          }, 4000);
         },
       },
     });
 
     rzp.on("payment.failed", (raw: unknown) => {
-      const response = raw as { error?: { description?: string; reason?: string } };
+      const response = raw as { error?: { description?: string; reason?: string; code?: string } };
       const desc =
         response?.error?.description ||
         response?.error?.reason ||
         "Payment failed. Please try again.";
       const e = new Error(desc);
-      (e as Error & { paymentFailed?: boolean }).paymentFailed = true;
+      const err = e as Error & { paymentFailed?: boolean; providerSetup?: boolean };
+      err.paymentFailed = true;
+      if (/does not exist|bad_request/i.test(desc)) {
+        err.providerSetup = true;
+      }
       finish(() => reject(e));
     });
 
     hooks?.onCheckoutOpen?.();
-    rzp.open();
+    window.setTimeout(() => {
+      try {
+        rzp.open();
+      } catch (openErr: unknown) {
+        const msg =
+          openErr instanceof Error ? openErr.message : "Could not open Razorpay checkout";
+        const e = new Error(msg);
+        (e as Error & { providerSetup?: boolean }).providerSetup = true;
+        finish(() => reject(e));
+      }
+    }, 150);
   });
 }
 
@@ -276,12 +322,17 @@ export function handlePaymentFlowError(error: unknown, refundDays = 12): void {
     isProviderSetupError(message);
 
   let providerError: string | undefined;
-  if (providerSetup || paymentFailed) {
+  if (isNetworkOrCorsError(message)) {
+    providerError =
+      "Could not reach the payment server. Open https://wonderbaboon.com (not www) and try again, or check your connection.";
+  } else if (providerSetup || paymentFailed) {
     providerError = message;
   } else if (verifyFailed) {
     providerError =
       message ||
       "Payment may have gone through but we could not confirm your booking. Contact Wonder Baboon with your payment reference before paying again.";
+  } else if (message && message !== "Payment cancelled") {
+    providerError = message;
   }
 
   showPaymentIncompleteModal(refundDays, {

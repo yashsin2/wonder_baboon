@@ -287,12 +287,7 @@ function openBookingModal(trip) {
                 if (submitBtn)
                     submitBtn.textContent = "Opening payment…";
                 try {
-                    const { message } = await completeBookingWithOptionalRazorpay(saved, contact, trip.title, date, {
-                        onCheckoutOpen: () => {
-                            if (submitBtn?.isConnected)
-                                submitBtn.textContent = "Complete payment in popup";
-                        },
-                    });
+                    const { message } = await completeBookingWithOptionalRazorpay(saved, contact, trip.title, date);
                     modal.remove();
                     showSuccessModal("Booking confirmed", message);
                 }

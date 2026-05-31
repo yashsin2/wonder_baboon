@@ -288,6 +288,7 @@ class MongoService:
     package_total_inr: int,
     advance_inr: int,
     amount_paise: int,
+    razorpay_key_id: str = "",
   ) -> bool:
     raw = (booking_id or "").strip()
     if not raw:
@@ -302,6 +303,7 @@ class MongoService:
       {
         "$set": {
           "razorpayOrderId": razorpay_order_id,
+          "razorpayKeyId": (razorpay_key_id or "").strip(),
           "razorpayPackageTotalInr": int(package_total_inr),
           "razorpayAdvanceInr": int(advance_inr),
           "razorpayAmountPaise": int(amount_paise),

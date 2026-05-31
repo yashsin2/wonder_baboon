@@ -495,9 +495,11 @@ def list_trips():
 
 @app.get("/api/payments/razorpay/config")
 def razorpay_config():
+  key = RAZORPAY_KEY_ID if razorpay_enabled() else ""
   return {
     "enabled": razorpay_enabled(),
-    "key_id": RAZORPAY_KEY_ID if razorpay_enabled() else "",
+    "key_id": key,
+    "test_mode": key.startswith("rzp_test_"),
     "advance_percent": advance_percent(),
     "advance_refund_days": RAZORPAY_ADVANCE_REFUND_DAYS,
     "requires_payment_to_confirm": razorpay_enabled(),
@@ -522,24 +524,6 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
     )
   advance_inr, balance_inr = compute_advance_inr(package_total)
   amount_paise = max(MIN_AMOUNT_PAISE, advance_inr * 100)
-  existing_order = str(booking.get("razorpayOrderId") or "").strip()
-  existing_paise = int(booking.get("razorpayAmountPaise") or 0)
-  if (
-    existing_order
-    and existing_paise == amount_paise
-    and int(booking.get("razorpayAdvanceInr") or 0) == advance_inr
-  ):
-    return {
-      "order_id": existing_order,
-      "amount": amount_paise,
-      "amount_paise": amount_paise,
-      "currency": "INR",
-      "key_id": RAZORPAY_KEY_ID,
-      "package_total_inr": package_total,
-      "advance_payment_inr": advance_inr,
-      "balance_due_inr": balance_inr,
-      "advance_percent": advance_percent(),
-    }
   try:
     order = razorpay_create_order(
       amount_paise,
@@ -562,18 +546,22 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
   order_id = str(order.get("id") or "").strip()
   if not order_id:
     raise HTTPException(status_code=502, detail="could not create payment order")
+  razorpay_amount = int(order.get("amount") or amount_paise)
+  if razorpay_amount < MIN_AMOUNT_PAISE:
+    raise HTTPException(status_code=502, detail="Razorpay returned an invalid order amount")
   if not mongo_service.set_booking_razorpay_order(
     payload.booking_id,
     order_id,
     package_total,
     advance_inr,
     amount_paise,
+    RAZORPAY_KEY_ID,
   ):
     raise HTTPException(status_code=400, detail="could not attach payment order to booking")
   return {
     "order_id": order_id,
-    "amount": amount_paise,
-    "amount_paise": amount_paise,
+    "amount": razorpay_amount,
+    "amount_paise": razorpay_amount,
     "currency": "INR",
     "key_id": RAZORPAY_KEY_ID,
     "package_total_inr": package_total,

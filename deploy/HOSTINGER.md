@@ -8,6 +8,16 @@ The site uses **clean URLs** (`/upcoming-trips`, not `/upcoming-trips.html`). Ho
 2. Upload the whole `frontend/` folder contents into `public_html` (or your web root).
 3. Confirm **`public_html/.htaccess`** is present (enable “show hidden files” in File Manager).
 4. Confirm **`public_html/version.json`** was uploaded (drives the “site updated — refresh” banner for open tabs).
+5. On the **API server** (VPS), set CORS to both hosts (or rely on `.htaccess` www → apex redirect):
+
+   ```env
+   CORS_ORIGINS=https://wonderbaboon.com,https://www.wonderbaboon.com
+   ENV=production
+   RAZORPAY_KEY_ID=rzp_live_...
+   RAZORPAY_KEY_SECRET=...
+   ```
+
+   Then restart the API. Without this, visitors on `www.wonderbaboon.com` cannot call `api.wonderbaboon.com` and Razorpay never opens.
 
 Returning visitors pick up changes automatically; users with an old tab open see a refresh prompt at the bottom of the page.
 

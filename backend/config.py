@@ -52,7 +52,14 @@ if IS_PRODUCTION:
     )
   CORS_ORIGINS = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 else:
-  CORS_ORIGINS = [o.strip() for o in (_cors_raw or _default_origins).split(",") if o.strip()]
+  origins = [o.strip() for o in (_cors_raw or _default_origins).split(",") if o.strip()]
+  # .env often copies production CORS only — keep localhost working in development.
+  if (_cors_raw or "").strip():
+    for origin in _default_origins.split(","):
+      o = origin.strip()
+      if o and ("localhost" in o or "127.0.0.1" in o) and o not in origins:
+        origins.append(o)
+  CORS_ORIGINS = origins
 
 SMTP_HOST = (os.getenv("SMTP_HOST") or "").strip()
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
