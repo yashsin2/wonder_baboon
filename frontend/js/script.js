@@ -1,6 +1,7 @@
-import { API_BASE_URL, attachSmoothScroll, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
+import { API_BASE_URL, attachSmoothScroll, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
 import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js";
+import { mountHomePreviousTravels } from "./home-previous-travels.js";
 import { TRIP_STYLE_ORDER } from "./trip-styles.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
@@ -9,21 +10,39 @@ const tripsContainer = document.getElementById("tripsContainer");
 const searchInput = document.querySelector("#headerTripSearch");
 const searchButton = document.querySelector("#headerTripSearchBtn");
 const planButton = document.getElementById("planTripBtn");
-const planDestinationInput = document.getElementById("planDestination");
-const planDateInput = document.getElementById("planDate");
+const heroTravelStyleSelect = document.getElementById("heroTravelStyle");
+const heroTravelMonthSelect = document.getElementById("heroTravelMonth");
+const heroSelectBackdrop = document.getElementById("heroSelectBackdrop");
+const MOBILE_HERO_SELECT = window.matchMedia("(max-width: 768px)");
+const enhancedHeroSelects = new Map();
 let allTrips = [];
+function isUpcomingTrip(trip) {
+    if (!trip.startDate)
+        return true;
+    const dateKey = String(trip.startDate).slice(0, 10);
+    return isUpcomingTravelDate(dateKey);
+}
+/** Prefix match — typing "n" matches trips whose title or location starts with "n". */
+function tripMatchesPrefix(trip, term) {
+    const t = term.trim().toLowerCase();
+    if (!t)
+        return true;
+    const title = trip.title.toLowerCase();
+    const location = (trip.location || "").toLowerCase();
+    return title.startsWith(t) || location.startsWith(t);
+}
+function getTripSuggestions(term, limit = 8) {
+    const t = term.trim().toLowerCase();
+    if (!t)
+        return [];
+    return allTrips.filter((trip) => tripMatchesPrefix(trip, t)).slice(0, limit);
+}
 function escapeHtml(raw) {
     return raw
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
-}
-function tripMatchesTerm(trip, term) {
-    const t = term.trim().toLowerCase();
-    if (!t)
-        return true;
-    return `${trip.title} ${trip.location}`.toLowerCase().includes(t);
 }
 function scrollTripsIntoView() {
     document.getElementById("trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -37,9 +56,157 @@ function syncStyleChipUi() {
         chip.classList.toggle("active", isActive);
         chip.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
-    const heroEl = document.getElementById("heroTravelStyle");
-    if (heroEl)
-        heroEl.value = activeStyleChip;
+    if (heroTravelStyleSelect) {
+        heroTravelStyleSelect.value = activeStyleChip;
+        enhancedHeroSelects.get(heroTravelStyleSelect)?.refresh();
+    }
+}
+function refreshHeroSelect(select) {
+    if (!select)
+        return;
+    enhancedHeroSelects.get(select)?.refresh();
+}
+function closeHeroSelectMenus() {
+    document.querySelectorAll(".wb-search-field--select.is-open").forEach((field) => {
+        field.classList.remove("is-open");
+        field.querySelector(".wb-select-btn")?.setAttribute("aria-expanded", "false");
+        field.querySelector(".wb-select-menu")?.setAttribute("hidden", "");
+    });
+    heroSelectBackdrop?.setAttribute("hidden", "");
+    document.body.classList.remove("wb-select-open");
+}
+function teardownHeroSelectEnhancement(select) {
+    const field = select.closest(".wb-search-field--select");
+    field?.classList.remove("is-open");
+    field?.querySelector(".wb-select-btn")?.remove();
+    field?.querySelector(".wb-select-menu")?.remove();
+    select.classList.remove("wb-search-select--native");
+    enhancedHeroSelects.delete(select);
+}
+function syncHeroSelectMode() {
+    closeHeroSelectMenus();
+    const selects = [heroTravelStyleSelect, heroTravelMonthSelect].filter(Boolean);
+    if (MOBILE_HERO_SELECT.matches) {
+        selects.forEach((select) => {
+            if (!enhancedHeroSelects.has(select))
+                enhanceHeroSelect(select);
+        });
+        return;
+    }
+    selects.forEach(teardownHeroSelectEnhancement);
+    heroSelectBackdrop?.setAttribute("hidden", "");
+    document.body.classList.remove("wb-select-open");
+}
+function enhanceHeroSelect(select) {
+    const field = select.closest(".wb-search-field--select");
+    if (!field || field.querySelector(".wb-select-btn"))
+        return;
+    select.classList.add("wb-search-select--native");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "wb-select-btn";
+    btn.setAttribute("aria-haspopup", "listbox");
+    btn.setAttribute("aria-expanded", "false");
+    const menu = document.createElement("ul");
+    menu.className = "wb-select-menu";
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+    const refresh = () => {
+        const selected = select.options[select.selectedIndex];
+        btn.textContent = selected?.text || select.options[0]?.text || "";
+        btn.classList.toggle("is-placeholder", !select.value);
+        menu.innerHTML = Array.from(select.options)
+            .map((option) => {
+            const isSelected = option.value === select.value;
+            return `<li role="presentation">
+          <button type="button" role="option" class="wb-select-option${isSelected ? " is-selected" : ""}" data-value="${escapeHtml(option.value)}" aria-selected="${isSelected ? "true" : "false"}">
+            <span>${escapeHtml(option.text)}</span>
+            ${isSelected ? `<span class="wb-select-check" aria-hidden="true">✓</span>` : ""}
+          </button>
+        </li>`;
+        })
+            .join("");
+        menu.querySelectorAll(".wb-select-option").forEach((optionBtn) => {
+            optionBtn.addEventListener("click", () => {
+                select.value = optionBtn.dataset.value || "";
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+                refresh();
+                closeHeroSelectMenus();
+            });
+        });
+    };
+    btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!MOBILE_HERO_SELECT.matches)
+            return;
+        if (field.classList.contains("is-open")) {
+            closeHeroSelectMenus();
+            return;
+        }
+        closeHeroSelectMenus();
+        field.classList.add("is-open");
+        btn.setAttribute("aria-expanded", "true");
+        menu.hidden = false;
+        heroSelectBackdrop?.removeAttribute("hidden");
+        document.body.classList.add("wb-select-open");
+    });
+    field.appendChild(btn);
+    field.appendChild(menu);
+    refresh();
+    enhancedHeroSelects.set(select, { refresh });
+}
+function setupHeroMobileSelects() {
+    syncHeroSelectMode();
+    MOBILE_HERO_SELECT.addEventListener("change", syncHeroSelectMode);
+    heroSelectBackdrop?.addEventListener("click", closeHeroSelectMenus);
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape")
+            closeHeroSelectMenus();
+    });
+    document.addEventListener("click", (event) => {
+        if (!event.target.closest(".wb-search-field--select, .wb-select-backdrop")) {
+            closeHeroSelectMenus();
+        }
+    });
+}
+function tripMatchesMonth(trip, monthKey) {
+    if (!monthKey)
+        return true;
+    const target = Number(monthKey);
+    if (!target || target < 1 || target > 12)
+        return true;
+    const startRaw = trip.startDate ? String(trip.startDate).slice(0, 10) : "";
+    if (!startRaw)
+        return true;
+    const start = parseTravelDate(startRaw);
+    const endRaw = trip.endDate ? String(trip.endDate).slice(0, 10) : startRaw;
+    const end = parseTravelDate(endRaw);
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= endMonth) {
+        if (cursor.getMonth() + 1 === target)
+            return true;
+        cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return false;
+}
+function monthName(monthNum) {
+    return new Date(2000, monthNum - 1, 1).toLocaleString("en-US", { month: "long" });
+}
+function populateHeroMonthOptions() {
+    if (!heroTravelMonthSelect)
+        return;
+    const previous = heroTravelMonthSelect.value;
+    heroTravelMonthSelect.innerHTML =
+        `<option value="">Choose month</option>` +
+            Array.from({ length: 12 }, (_, index) => {
+                const monthNum = index + 1;
+                return `<option value="${monthNum}">${monthName(monthNum)}</option>`;
+            }).join("");
+    if (previous && Number(previous) >= 1 && Number(previous) <= 12) {
+        heroTravelMonthSelect.value = previous;
+    }
+    refreshHeroSelect(heroTravelMonthSelect);
 }
 function setupStyleChipFilters() {
     document.querySelectorAll("[data-style-chip]").forEach((chip) => {
@@ -57,31 +224,11 @@ function filterTripsCatalog(filters) {
     let list = [...allTrips];
     const dest = (filters.destination || "").trim().toLowerCase();
     if (dest) {
-        list = list.filter((trip) => tripMatchesTerm(trip, dest));
+        list = list.filter((trip) => tripMatchesPrefix(trip, dest));
     }
     const style = (filters.travelStyle || "").trim().toLowerCase();
     if (style && TRAVEL_STYLE_SLUGS.has(style)) {
         list = list.filter((trip) => (trip.tripStyle || "backpackers") === style);
-    }
-    const dateStr = (filters.date || "").trim();
-    if (dateStr) {
-        try {
-            const userMid = new Date(`${dateStr}T12:00:00`);
-            list = list.filter((trip) => {
-                if (!trip.startDate)
-                    return true;
-                const sd = parseTravelDate(trip.startDate);
-                sd.setHours(0, 0, 0, 0);
-                const ed = trip.endDate ? parseTravelDate(trip.endDate) : new Date(sd.getTime());
-                ed.setHours(23, 59, 59, 999);
-                const u = new Date(userMid);
-                u.setHours(12, 0, 0, 0);
-                return u >= sd && u <= ed;
-            });
-        }
-        catch {
-            /* ignore invalid date */
-        }
     }
     return list;
 }
@@ -486,7 +633,7 @@ async function loadTrips() {
         }
         if (!response.ok)
             throw new Error(await parseError(response, payload));
-        allTrips = payload.trips || [];
+        allTrips = (payload.trips || []).filter(isUpcomingTrip);
         syncStyleChipUi();
         filterTripsAndReveal();
     }
@@ -499,151 +646,169 @@ async function loadTrips() {
         showMessagePopup(msg, "error");
     }
 }
-function filterTripsAndReveal(opts) {
-    const term = (searchInput?.value || "").trim().toLowerCase();
-    let filtered = !term ? [...allTrips] : allTrips.filter((trip) => tripMatchesTerm(trip, term));
-    if (activeStyleChip) {
+function filterUpcomingTrips(term, applyStyleWhenEmpty = true) {
+    const t = term.trim().toLowerCase();
+    let filtered = !t ? [...allTrips] : allTrips.filter((trip) => tripMatchesPrefix(trip, t));
+    if (applyStyleWhenEmpty && !t && activeStyleChip) {
         filtered = filtered.filter((trip) => (trip.tripStyle || "backpackers") === activeStyleChip);
     }
+    return filtered;
+}
+function clearSearchInputs() {
+    if (searchInput)
+        searchInput.value = "";
+    document.querySelectorAll(".search-dropdown").forEach((dropdown) => {
+        dropdown.style.display = "none";
+        dropdown.innerHTML = "";
+    });
+}
+function syncStyleChipFromTrips(trips) {
+    if (trips.length === 1) {
+        activeStyleChip = (trips[0].tripStyle || "backpackers");
+    }
+    else if (trips.length !== 1) {
+        activeStyleChip = "";
+    }
+    syncStyleChipUi();
+}
+function applyTripSearch(term, opts) {
+    const t = term.trim();
+    const filtered = filterUpcomingTrips(t, !t);
     const emptyHint = filtered.length === 0
-        ? activeStyleChip || term
-            ? "No trips match this filter. Try another vibe or clear the search."
-            : undefined
+        ? t
+            ? "No upcoming trips match this search. Try another name."
+            : activeStyleChip
+                ? "No upcoming trips for this vibe right now."
+                : undefined
         : undefined;
     renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
+    if (t && filtered.length > 0)
+        syncStyleChipFromTrips(filtered);
+    if (opts?.commit)
+        clearSearchInputs();
     if (opts?.scroll)
         scrollTripsIntoView();
 }
-function handleHeroFindTrips() {
-    const destination = planDestinationInput?.value?.trim() || "";
-    const dateOfTravel = planDateInput?.value?.trim() || "";
-    const travelStyleEl = document.getElementById("heroTravelStyle");
-    const travelStyle = travelStyleEl?.value?.trim() || "";
-    if (!destination && !travelStyle && !dateOfTravel) {
-        showMessagePopup("Enter a destination, choose a travel vibe, or pick a date to search trips.", "error");
+function filterTripsAndReveal(opts) {
+    applyTripSearch(searchInput?.value || "", opts);
+}
+function selectTripFromSearch(trip) {
+    activeStyleChip = (trip.tripStyle || "backpackers");
+    syncStyleChipUi();
+    renderTrips([trip]);
+    clearSearchInputs();
+    scrollTripsIntoView();
+}
+function highlightPrefix(text, term) {
+    const t = term.trim();
+    if (!t)
+        return escapeHtml(text);
+    if (!text.toLowerCase().startsWith(t.toLowerCase()))
+        return escapeHtml(text);
+    return `<mark class="suggestion-mark">${escapeHtml(text.slice(0, t.length))}</mark>${escapeHtml(text.slice(t.length))}`;
+}
+function suggestionMeta(trip) {
+    const parts = [trip.location, trip.durationLabel].filter(Boolean);
+    return parts.join(" · ");
+}
+function ensureSuggestionDropdown(input) {
+    const host = input.closest(".search-bar, .search-box");
+    if (!host)
+        throw new Error("Search input must sit inside .search-bar or .search-box");
+    let dropdown = host.querySelector(".search-dropdown");
+    if (!dropdown) {
+        dropdown = document.createElement("div");
+        dropdown.className = "search-dropdown";
+        dropdown.setAttribute("role", "listbox");
+        host.appendChild(dropdown);
+    }
+    return dropdown;
+}
+function hideSuggestionDropdown(dropdown) {
+    dropdown.style.display = "none";
+    dropdown.innerHTML = "";
+}
+function renderSearchSuggestions(input, dropdown) {
+    const term = input.value.trim();
+    const matches = getTripSuggestions(term);
+    if (!term) {
+        hideSuggestionDropdown(dropdown);
         return;
     }
-    if (travelStyle && TRAVEL_STYLE_SLUGS.has(travelStyle)) {
-        activeStyleChip = travelStyle;
+    if (matches.length === 0) {
+        dropdown.innerHTML = `<p class="search-dropdown-empty">No upcoming trips starting with “${escapeHtml(term)}”</p>`;
+        dropdown.style.display = "block";
+        return;
+    }
+    dropdown.innerHTML = `
+    <p class="search-dropdown-header">Upcoming trips</p>
+    ${matches
+        .map((trip) => `
+    <button type="button" class="suggestion-item" role="option" data-trip-id="${escapeHtml(trip._id)}">
+      <img class="suggestion-thumb" src="${escapeHtml(normalizeImageUrl(trip.imageUrl))}" alt="" loading="lazy" decoding="async" />
+      <span class="suggestion-item-body">
+        <strong>${highlightPrefix(trip.title, term)}</strong>
+        ${suggestionMeta(trip) ? `<span class="suggestion-meta">${escapeHtml(suggestionMeta(trip))}</span>` : ""}
+      </span>
+      <span class="suggestion-price-col">
+        <span class="suggestion-from">from</span>
+        <span class="suggestion-item-price">₹${Number(trip.price).toLocaleString("en-IN")}</span>
+      </span>
+    </button>`)
+        .join("")}`;
+    dropdown.style.display = "block";
+    dropdown.querySelectorAll(".suggestion-item").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const trip = allTrips.find((item) => item._id === btn.dataset.tripId);
+            if (!trip)
+                return;
+            hideSuggestionDropdown(dropdown);
+            selectTripFromSearch(trip);
+        });
+    });
+}
+function setupSearchSuggestions(input) {
+    const dropdown = ensureSuggestionDropdown(input);
+    const refresh = () => renderSearchSuggestions(input, dropdown);
+    input.addEventListener("input", () => {
+        refresh();
+        if (input === searchInput)
+            applyTripSearch(input.value, { scroll: false });
+    });
+    input.addEventListener("focus", refresh);
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape")
+            hideSuggestionDropdown(dropdown);
+    });
+    document.addEventListener("click", (e) => {
+        if (!input.closest(".search-bar, .search-box")?.contains(e.target)) {
+            hideSuggestionDropdown(dropdown);
+        }
+    });
+}
+function handleHeroFindTrips() {
+    const style = heroTravelStyleSelect?.value.trim() || "";
+    const month = heroTravelMonthSelect?.value.trim() || "";
+    if (!style && !month) {
+        showMessagePopup("Choose a travel style or month to search.", "error");
+        return;
+    }
+    if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+        activeStyleChip = style;
         syncStyleChipUi();
     }
-    const filtered = filterTripsCatalog({ destination, travelStyle, date: dateOfTravel });
+    let filtered = [...allTrips];
+    if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+        filtered = filtered.filter((trip) => (trip.tripStyle || "backpackers") === style);
+    }
+    if (month) {
+        filtered = filtered.filter((trip) => tripMatchesMonth(trip, month));
+    }
     const emptyHint = filtered.length === 0
-        ? "No packaged trips match those filters. Try adjusting them or search from the header."
+        ? "No upcoming trips match those filters. Try another style or month."
         : undefined;
     renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
     scrollTripsIntoView();
-    if (filtered.length === 0) {
-        if (destination && dateOfTravel) {
-            void handlePlannedTrip();
-        }
-        else {
-            showMessagePopup("No trips matched. Enter both destination and travel date to request a custom plan, or widen your search.", "error");
-        }
-    }
-}
-async function handlePlannedTrip() {
-    const destination = planDestinationInput?.value?.trim();
-    const dateOfTravel = planDateInput?.value;
-    if (!destination || !dateOfTravel) {
-        showMessagePopup("Please enter destination and date for planned trip", "error");
-        return;
-    }
-    const body = `
-    <p class="muted">Tell us how to reach you and we'll craft a custom plan.</p>
-    <form id="plannedTripForm" novalidate>
-      <label>Name *</label>
-      <input id="plannedName" type="text" required minlength="2" />
-      <label>Mobile *</label>
-      <input id="plannedMobile" type="tel" required placeholder="10-digit Indian number" />
-      <label>Email</label>
-      <input id="plannedEmail" type="email" />
-      <label>People *</label>
-      <input id="plannedPeople" type="number" min="1" max="20" value="1" required />
-      <div id="planned_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
-      <div class="wb-modal-actions">
-        <button type="button" class="wb-cancel" id="planned_cancel">Cancel</button>
-        <button type="submit" class="wb-primary" id="planned_submit">Submit</button>
-      </div>
-    </form>
-  `;
-    const modal = createWbModal(`Plan trip to ${escapeHtml(destination)}`, body);
-    const plannedExtrasWrap = modal.querySelector("#planned_extras_wrap");
-    const plannedPeopleEl = modal.querySelector("#plannedPeople");
-    const syncPlannedExtras = () => {
-        if (!plannedExtrasWrap || !plannedPeopleEl)
-            return;
-        const n = Number(plannedPeopleEl.value);
-        const count = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 1;
-        const needExtras = Math.max(0, count - 1);
-        plannedExtrasWrap.innerHTML = "";
-        if (needExtras === 0)
-            return;
-        let html = "";
-        for (let i = 0; i < needExtras; i++) {
-            const num = i + 2;
-            html += `<label>Traveler ${num} full name *</label><input type="text" class="planned-extra-traveler" required minlength="2" autocomplete="name" />`;
-        }
-        plannedExtrasWrap.innerHTML = html;
-    };
-    syncPlannedExtras();
-    plannedPeopleEl?.addEventListener("input", syncPlannedExtras);
-    modal.querySelector("#planned_cancel")?.addEventListener("click", () => modal.remove());
-    modal.querySelector("#plannedTripForm")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const name = modal.querySelector("#plannedName").value.trim();
-        const mobile = modal.querySelector("#plannedMobile").value.trim();
-        if (!name || !mobile) {
-            showMessagePopup("Name and mobile are required", "error");
-            return;
-        }
-        const people = Number(modal.querySelector("#plannedPeople").value);
-        const needExtras = Math.max(0, Math.min(19, people - 1));
-        const extraNames = Array.from(modal.querySelectorAll(".planned-extra-traveler")).map((el) => el.value.trim());
-        if (extraNames.length !== needExtras) {
-            showMessagePopup("Please fill every additional traveler's name.", "error");
-            return;
-        }
-        if (needExtras > 0 && extraNames.some((s) => s.length < 2)) {
-            showMessagePopup("Each traveler's name must be at least 2 characters.", "error");
-            return;
-        }
-        const submitBtn = modal.querySelector("#planned_submit");
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Submitting…";
-        }
-        try {
-            const response = await fetch(`${API_BASE_URL}/planned-trips`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    travel_destination: destination,
-                    date_of_travel: dateOfTravel,
-                    full_name: name,
-                    mobile,
-                    email: modal.querySelector("#plannedEmail").value.trim() || null,
-                    number_of_people: people,
-                    additional_travelers: extraNames,
-                }),
-            });
-            if (!response.ok)
-                throw new Error(await parseError(response));
-            modal.remove();
-            if (planDestinationInput)
-                planDestinationInput.value = "";
-            if (planDateInput)
-                planDateInput.value = "";
-            showSuccessModal("Planned trip submitted", "Our team will contact you with a custom plan soon.");
-        }
-        catch (error) {
-            showMessagePopup(error instanceof Error ? error.message : "Failed to save planned trip", "error");
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Submit";
-            }
-        }
-    });
 }
 /**
  * JS-driven parallax for sections that opt in via `[data-parallax]`
@@ -721,25 +886,36 @@ function setupTripCardOpenDetail() {
 }
 document.addEventListener("DOMContentLoaded", async () => {
     updateHeaderAuth();
+    await mountHomePreviousTravels();
     setupMobileMenu();
     attachSmoothScroll(document);
     setupParallax();
     setupStyleChipFilters();
+    populateHeroMonthOptions();
+    setupHeroMobileSelects();
     syncStyleChipUi();
     setupTripCardOpenDetail();
     setupItineraryButtons();
     await loadTrips();
     if (searchInput) {
-        searchInput.addEventListener("input", () => filterTripsAndReveal({ scroll: false }));
+        setupSearchSuggestions(searchInput);
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") {
                 e.preventDefault();
-                filterTripsAndReveal({ scroll: true });
+                filterTripsAndReveal({ scroll: true, commit: true });
             }
         });
     }
-    if (searchButton)
-        searchButton.addEventListener("click", () => filterTripsAndReveal({ scroll: true }));
+    if (searchButton) {
+        searchButton.addEventListener("click", () => filterTripsAndReveal({ scroll: true, commit: true }));
+    }
     if (planButton)
         planButton.addEventListener("click", handleHeroFindTrips);
+    heroTravelStyleSelect?.addEventListener("change", () => {
+        const style = heroTravelStyleSelect.value.trim();
+        if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+            activeStyleChip = style;
+            syncStyleChipUi();
+        }
+    });
 });

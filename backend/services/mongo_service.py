@@ -1,6 +1,8 @@
+import json
 import logging
 import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import certifi
@@ -11,7 +13,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from auth_utils import hash_password
-from config import ADMIN_PASSWORD, ADMIN_USERNAME, MONGO_URI
+from config import ADMIN_PASSWORD, ADMIN_USERNAME, MONGO_URI, ROOT_DIR
 from models import TRIP_STYLE_SLUGS
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,10 @@ class MongoService:
   def otp_collection(self) -> Collection:
     return self.db["profile_otps"]
 
+  @property
+  def travel_gallery_collection(self) -> Collection:
+    return self.db["travel_gallery"]
+
   def seed_defaults(self) -> None:
     self.admin_collection.create_index([("username", ASCENDING)], unique=True)
     self.user_collection.create_index([("email", ASCENDING)], unique=True)
@@ -99,9 +105,13 @@ class MongoService:
     self.otp_collection.create_index([("userEmail", ASCENDING), ("kind", ASCENDING)])
     self.otp_collection.create_index([("createdAt", DESCENDING)])
     self.otp_collection.create_index([("expiresAt", ASCENDING)], expireAfterSeconds=0)
+    self.travel_gallery_collection.create_index([("id", ASCENDING)], unique=True)
+    self.travel_gallery_collection.create_index([("sortOrder", ASCENDING)])
     logger.info("Mongo indexes ensured")
 
     self.backfill_booking_payment()
+    self._seed_travel_gallery_if_empty()
+    self._sync_travel_gallery_from_seed()
 
     if not self.admin_collection.find_one({"username": ADMIN_USERNAME}):
       self.admin_collection.insert_one(
@@ -289,6 +299,7 @@ class MongoService:
     advance_inr: int,
     amount_paise: int,
     razorpay_key_id: str = "",
+    payment_kind: str = "advance",
   ) -> bool:
     raw = (booking_id or "").strip()
     if not raw:
@@ -307,6 +318,38 @@ class MongoService:
           "razorpayPackageTotalInr": int(package_total_inr),
           "razorpayAdvanceInr": int(advance_inr),
           "razorpayAmountPaise": int(amount_paise),
+          "razorpayPaymentKind": (payment_kind or "advance").strip(),
+        }
+      },
+    )
+    return result.matched_count > 0
+
+  def set_booking_razorpay_balance_order(
+    self,
+    booking_id: str,
+    razorpay_order_id: str,
+    balance_inr: int,
+    amount_paise: int,
+    razorpay_key_id: str = "",
+  ) -> bool:
+    """Attach a Razorpay order for the remaining balance (advance_paid bookings)."""
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one(
+      {"$and": [{"$or": id_clauses}, {"payment": "advance_paid"}]},
+      {
+        "$set": {
+          "razorpayOrderId": razorpay_order_id,
+          "razorpayKeyId": (razorpay_key_id or "").strip(),
+          "razorpayAdvanceInr": int(balance_inr),
+          "razorpayAmountPaise": int(amount_paise),
+          "razorpayPaymentKind": "balance",
         }
       },
     )
@@ -779,6 +822,133 @@ class MongoService:
     if refreshed:
       refreshed["_id"] = str(refreshed["_id"])
     return refreshed
+
+  def _load_travel_gallery_seed(self) -> List[dict]:
+    seed_path = ROOT_DIR / "backend" / "data" / "travel_gallery_seed.json"
+    if not seed_path.is_file():
+      logger.warning("travel gallery seed file missing: %s", seed_path)
+      return []
+    try:
+      raw = json.loads(seed_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+      logger.warning("travel gallery seed load failed: %s", error)
+      return []
+    if not isinstance(raw, list):
+      return []
+    return [item for item in raw if isinstance(item, dict) and item.get("id")]
+
+  def _seed_travel_gallery_if_empty(self) -> None:
+    if self.travel_gallery_collection.count_documents({}) > 0:
+      return
+    seed_items = self._load_travel_gallery_seed()
+    if not seed_items:
+      return
+    now = datetime.utcnow()
+    docs = [{**item, "createdAt": now, "updatedAt": now} for item in seed_items]
+    self.travel_gallery_collection.insert_many(docs)
+    logger.info("Seeded %s travel gallery destinations", len(docs))
+
+  def _sync_travel_gallery_from_seed(self) -> None:
+    """Keep map pins & new destinations aligned with travel_gallery_seed.json."""
+    seed_items = self._load_travel_gallery_seed()
+    if not seed_items:
+      return
+    now = datetime.utcnow()
+    synced = 0
+    inserted = 0
+    for item in seed_items:
+      dest_id = str(item["id"])
+      existing = self.travel_gallery_collection.find_one({"id": dest_id})
+      if existing:
+        patch = {
+          "mapPin": item.get("mapPin"),
+          "sortOrder": item.get("sortOrder", 0),
+          "state": item.get("state"),
+          "title": item.get("title", item.get("state")),
+          "status": item.get("status"),
+          "pinSubtitle": item.get("pinSubtitle"),
+          "svgStateId": item.get("svgStateId"),
+          "heroImage": item.get("heroImage"),
+          "updatedAt": now,
+        }
+        patch = {key: value for key, value in patch.items() if value is not None}
+        self.travel_gallery_collection.update_one({"id": dest_id}, {"$set": patch})
+        synced += 1
+      else:
+        self.travel_gallery_collection.insert_one({**item, "createdAt": now, "updatedAt": now})
+        inserted += 1
+    if synced or inserted:
+      logger.info("Travel gallery sync: updated %s, inserted %s", synced, inserted)
+
+  def list_travel_gallery(self) -> List[dict]:
+    rows = list(self.travel_gallery_collection.find({}).sort([("sortOrder", ASCENDING), ("state", ASCENDING)]))
+    out: List[dict] = []
+    for row in rows:
+      row.pop("_id", None)
+      row.pop("createdAt", None)
+      row.pop("updatedAt", None)
+      out.append(row)
+    return out
+
+  def find_travel_gallery_by_id(self, dest_id: str) -> Optional[dict]:
+    key = (dest_id or "").strip().lower()
+    if not key:
+      return None
+    row = self.travel_gallery_collection.find_one({"id": key})
+    if not row:
+      return None
+    row.pop("_id", None)
+    row.pop("createdAt", None)
+    row.pop("updatedAt", None)
+    return row
+
+  def update_travel_gallery(self, dest_id: str, fields: Dict[str, Any]) -> bool:
+    key = (dest_id or "").strip().lower()
+    if not key:
+      return False
+
+    allowed = {
+      "state",
+      "title",
+      "tripLabel",
+      "tripMeta",
+      "status",
+      "pinSubtitle",
+      "dates",
+      "travelers",
+      "days",
+      "photoCountLabel",
+      "heroImage",
+      "story",
+      "reelUrl",
+      "photos",
+      "testimonials",
+      "highlights",
+      "videos",
+    }
+    update: Dict[str, Any] = {}
+    for api_key, value in fields.items():
+      if api_key not in allowed or value is None:
+        continue
+      update[api_key] = value
+
+    if not update:
+      return self.find_travel_gallery_by_id(key) is not None
+
+    update["updatedAt"] = datetime.utcnow()
+    result = self.travel_gallery_collection.update_one({"id": key}, {"$set": update})
+    return result.matched_count > 0
+
+  def append_travel_gallery_photo(self, dest_id: str, photo_path: str) -> bool:
+    key = (dest_id or "").strip().lower()
+    path = (photo_path or "").strip()
+    if not key or not path:
+      return False
+    result = self.travel_gallery_collection.update_one(
+      {"id": key},
+      {"$push": {"photos": path}, "$set": {"updatedAt": datetime.utcnow()}},
+    )
+    return result.matched_count > 0
 
 
 mongo_service = MongoService()

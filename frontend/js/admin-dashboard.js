@@ -1,4 +1,5 @@
 import { API_BASE_URL, getSession, parseError, ROUTES } from "./config.js";
+import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js";
 import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "admin") {
@@ -393,6 +394,7 @@ const TAB_COPY = {
     "stats-tab": ["Overview", "Payment confirmation overview and catalogue."],
     "bookings-tab": ["Booking details", "Search and review every reservation."],
     "trips-tab": ["Trips", "Add packages, upload PDF itineraries, edit or remove catalogue trips."],
+    "gallery-tab": ["Travel Gallery", "Edit photos, reviews, and journal content for past trips."],
 };
 function setActiveTab(tabId) {
     document.querySelectorAll(".sidebar-nav-btn").forEach((b) => {
@@ -410,6 +412,8 @@ function setActiveTab(tabId) {
     }
     if (tabId === "trips-tab")
         void loadTripManageList(lastTripManageSearch);
+    if (tabId === "gallery-tab")
+        void loadAdminGalleryTab(authHeaders);
 }
 document.querySelectorAll(".sidebar-nav-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -985,6 +989,7 @@ document.getElementById("adminTripManageSearch")?.addEventListener("keyup", (e) 
         document.getElementById("adminTripManageSearchBtn").click();
 });
 document.addEventListener("DOMContentLoaded", async () => {
+    initAdminGallery(authHeaders);
     await loadStats();
     try {
         lastBookingSearch = "";

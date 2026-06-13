@@ -41,6 +41,7 @@ export const ROUTES = {
     home: "/",
     auth: "/auth",
     upcoming: "/upcoming-trips",
+    adventures: "/previous-adventures",
     previous: "/previous-trips",
     settings: "/settings",
     admin: "/admin-dashboard",

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <script>
+  (function () {
+    var p = location.pathname;
+    if (/\.html$/i.test(p)) {
+      history.replaceState(null, "", p.replace(/\.html$/i, "") + location.search + location.hash);
+    }
+    var h = location.hostname;
+    if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
+      window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";
+    }
+  })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Travel Gallery · Wonder Baboon</title>
+  <link rel="icon" href="/assets/logo.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+  <link rel="stylesheet" href="./styles.css?v=20250604" />
+  <link rel="stylesheet" href="./previous-adventures.css?v=20250604" />
+  <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Libre+Baskerville:wght@700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Permanent+Marker&display=swap" rel="stylesheet" />
+</head>
+<body data-page="adventures">
+  <header class="site-header">
+    <div class="header-container">
+      <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+      <a class="logo" href="/">
+        <img src="./assets/logo.png" alt="Wonder Baboon" />
+        <div class="logo-text-block">
+          <span class="logo-text">Wonder Baboon</span>
+          <span class="logo-greeting" id="logoGreeting"></span>
+        </div>
+      </a>
+      <nav class="nav-links" aria-label="Main">
+        <a href="/#trips">Upcoming Trips</a>
+        <a href="/previous-adventures" class="is-active" aria-current="page">Travel Gallery</a>
+        <a href="/#about">About Us</a>
+        <a href="/#travel-style">Travel Styles</a>
+      </nav>
+      <div class="header-right">
+        <div class="search-bar wb-search wb-search--header">
+          <div class="wb-search-field">
+            <svg class="wb-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <input id="headerTripSearch" type="search" placeholder="Find a trip…" autocomplete="off" />
+          </div>
+          <button type="button" id="headerTripSearchBtn" class="wb-search-go" aria-label="Search trips">Go</button>
+        </div>
+        <a class="phone" href="tel:+919151584677">📞 +91 91515 84677</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="adv-canvas">
+    <div class="adv-parchment-bg" aria-hidden="true"></div>
+
+    <div class="adv-mockup-layout">
+      <!-- LEFT: map + story overlay -->
+      <section class="adv-map-stage" aria-label="India travel gallery map">
+        <div class="adv-hero-overlay">
+          <h1 class="adv-hero-title">Our Journey</h1>
+          <p class="adv-hero-script">So Far</p>
+          <p class="adv-hero-lead">Every pin holds a story. Every story made us better.</p>
+          <ul class="adv-legend" aria-label="Map legend">
+            <li><span class="adv-legend-pin adv-legend-pin--done"></span> Completed Trips</li>
+            <li><span class="adv-legend-pin adv-legend-pin--soon"></span> Upcoming Trips</li>
+          </ul>
+        </div>
+
+        <div class="adv-map-board">
+          <div class="adv-map-loading" id="advMapLoading" aria-live="polite">Unfolding the map…</div>
+
+          <div class="adv-map-frame" id="advMapFrame" hidden>
+            <div class="adv-sea-texture" aria-hidden="true"></div>
+            <div class="adv-contour-lines" aria-hidden="true"></div>
+            <svg class="adv-travel-routes" id="advTravelRoutes" viewBox="0 0 612 696" aria-hidden="true"></svg>
+            <div class="adv-map-svg-host" id="advIndiaMapHost"></div>
+            <div class="adv-map-pins" id="advMapPins"></div>
+            <div class="adv-vintage-vignette" aria-hidden="true"></div>
+
+            <div class="adv-map-deco adv-map-deco--compass" aria-hidden="true">
+              <svg viewBox="0 0 100 100" width="80" height="80">
+                <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="0.9"/>
+                <circle cx="50" cy="50" r="32" fill="none" stroke="currentColor" stroke-width="0.5" opacity="0.5"/>
+                <path d="M50 10 L54 50 L50 44 L46 50 Z" fill="currentColor"/>
+                <path d="M50 90 L46 50 L50 56 L54 50 Z" fill="currentColor" opacity="0.35"/>
+                <text x="50" y="8" text-anchor="middle" font-size="9" fill="currentColor" font-family="Georgia,serif">N</text>
+              </svg>
+            </div>
+            <div class="adv-map-deco adv-map-deco--stamp" aria-hidden="true">
+              <span>WONDER</span><span>BABOON</span><span>2026</span>
+            </div>
+            <div class="adv-map-deco adv-map-deco--passport" aria-hidden="true">
+              <span class="adv-passport-icon">✈</span>
+              <span>PASSPORT</span>
+            </div>
+            <div class="adv-map-deco adv-map-deco--ship" aria-hidden="true">⛵</div>
+            <div class="adv-map-deco adv-map-deco--palm" aria-hidden="true"></div>
+            <p class="adv-wander-tagline" aria-hidden="true">
+              <span>WANDER.</span><span>CONNECT.</span><span>REPEAT.</span>
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div class="adv-detail-backdrop" id="advDetailBackdrop" hidden></div>
+
+      <!-- RIGHT: journal card (always visible on desktop when open) -->
+      <aside class="adv-journal-column">
+        <article
+          class="adv-detail-panel"
+          id="advDetailPanel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="advDetailTitle"
+          hidden
+        >
+          <button type="button" class="adv-detail-close" id="advDetailClose" aria-label="Close trip journal">&times;</button>
+          <div class="adv-detail-scroll" id="advDetailInner"></div>
+        </article>
+      </aside>
+    </div>
+
+    <p class="adv-mobile-hint" id="advMobileHint">Tap a pin or destination below to open the journal</p>
+    <nav class="adv-pin-chips" id="advPinChips" aria-label="Quick destination picker"></nav>
+  </main>
+
+  <aside class="user-panel" id="userPanel" aria-hidden="true">
+    <div class="user-panel-overlay" data-panel-close></div>
+    <div class="user-panel-drawer" role="dialog" aria-label="Wonder Baboon menu">
+      <header class="user-panel-head">
+        <button class="user-panel-close" data-panel-close aria-label="Close panel">&times;</button>
+        <div class="up-head-row">
+          <div class="up-avatar" id="panelAvatar" aria-hidden="true"><img src="./assets/logo.png" alt="Wonder Baboon" /></div>
+          <div class="up-head-text">
+            <h3 id="panelTitle">Wonder Baboon</h3>
+            <p id="panelGreeting" class="up-greeting">Welcome, traveler</p>
+          </div>
+        </div>
+      </header>
+      <nav class="up-nav" data-panel-nav>
+        <a class="up-nav-item" href="/" data-page="home"><span class="up-icon">🏠</span> Home</a>
+        <a class="up-nav-item" href="/upcoming-trips" data-page="upcoming"><span class="up-icon">📅</span> Your trips</a>
+        <a class="up-nav-item" href="/previous-adventures" data-page="adventures"><span class="up-icon">🗺️</span> Travel Gallery</a>
+        <a class="up-nav-item" href="/previous-trips" data-page="previous"><span class="up-icon">📋</span> Your past bookings</a>
+        <a class="up-nav-item" href="/settings" data-page="settings"><span class="up-icon">⚙️</span> Settings</a>
+        <div class="up-nav-section">
+          <p class="up-nav-section-label">Explore by vibe</p>
+          <a class="up-nav-item up-nav-item--sub" href="/backpackers" data-page="backpackers"><span>The Backpackers</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/motorcycle-diaries" data-page="motorcycle-diaries"><span>The Motorcycle Diaries</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/dolce-far-niente" data-page="dolce-far-niente"><span>Dolce far niente</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/hikers" data-page="hikers"><span>The Hikers</span></a>
+        </div>
+      </nav>
+      <footer class="user-panel-foot" id="userPanelFoot">
+        <a href="/auth" class="up-footer-btn up-login-btn">Login / Sign up</a>
+      </footer>
+    </div>
+  </aside>
+
+  <script type="module" src="./js/previous-adventures.js?v=20250604"></script>
+  <script type="module" src="./js/user-panel.js?v=20250604"></script>
+  <script src="/version-check.js?v=20250604a" defer></script>
+</body>
+</html>

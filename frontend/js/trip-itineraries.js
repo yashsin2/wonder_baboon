@@ -44,11 +44,11 @@ const JIBHI_HTML = `
     <li>Evening: return to stay, bonfire</li>
   </ul>
 
-  <h4>Day 3: Serolsar Lake trek</h4>
+  <h4>Day 3: Bahu — Yeh Jawaani Hai Deewani movie spot</h4>
   <ul>
     <li>Early breakfast</li>
-    <li>Drive to Jalori Pass · trek to Serolsar Lake (~5 km one way, easy–moderate)</li>
-    <li>Forest trail &amp; alpine lake — core highlight</li>
+    <li>Drive towards Bahu village — the iconic YJHD trail</li>
+    <li>Mountain views, café stops &amp; photo walk — core highlight</li>
     <li>Evening: bonfire &amp; open mic</li>
   </ul>
 

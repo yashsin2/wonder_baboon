@@ -1,5 +1,6 @@
 import hmac
 import logging
+import re
 import threading
 import time
 import uuid
@@ -19,6 +20,7 @@ from config import (
   PORT,
   RAZORPAY_ADVANCE_REFUND_DAYS,
   RAZORPAY_KEY_ID,
+  ROOT_DIR,
 )
 from logging_setup import configure_logging
 from models import (
@@ -36,6 +38,7 @@ from models import (
   ProfileNameUpdateRequest,
   RazorpayCreateOrderRequest,
   RazorpayVerifyRequest,
+  TravelGalleryUpdateRequest,
   UnifiedLoginRequest,
   UserSignupRequest,
 )
@@ -1106,6 +1109,90 @@ def admin_clear_trip_itinerary(trip_id: str, _: dict = Depends(require_admin)):
   if not mongo_service.set_trip_itinerary_html(trip_id, None):
     raise HTTPException(status_code=404, detail="trip not found")
   return {"message": "custom itinerary removed"}
+
+
+def _gallery_update_fields(payload: TravelGalleryUpdateRequest) -> Dict[str, Any]:
+  raw = payload.model_dump(exclude_unset=True)
+  key_map = {
+    "trip_label": "tripLabel",
+    "trip_meta": "tripMeta",
+    "pin_subtitle": "pinSubtitle",
+    "photo_count_label": "photoCountLabel",
+    "hero_image": "heroImage",
+    "reel_url": "reelUrl",
+  }
+  out: Dict[str, Any] = {}
+  for key, value in raw.items():
+    out[key_map.get(key, key)] = value
+  return out
+
+
+@app.get("/api/travel-gallery")
+def public_travel_gallery():
+  return {"destinations": mongo_service.list_travel_gallery()}
+
+
+@app.get("/api/admin/travel-gallery")
+def admin_travel_gallery(_: dict = Depends(require_admin)):
+  return {"destinations": mongo_service.list_travel_gallery()}
+
+
+@app.get("/api/admin/travel-gallery/{dest_id}")
+def admin_travel_gallery_one(dest_id: str, _: dict = Depends(require_admin)):
+  dest = mongo_service.find_travel_gallery_by_id(dest_id)
+  if not dest:
+    raise HTTPException(status_code=404, detail="destination not found")
+  return {"destination": dest}
+
+
+@app.put("/api/admin/travel-gallery/{dest_id}")
+def admin_update_travel_gallery(
+  dest_id: str,
+  payload: TravelGalleryUpdateRequest,
+  _: dict = Depends(require_admin),
+):
+  fields = _gallery_update_fields(payload)
+  if not mongo_service.update_travel_gallery(dest_id, fields):
+    raise HTTPException(status_code=404, detail="destination not found")
+  dest = mongo_service.find_travel_gallery_by_id(dest_id)
+  return {"message": "travel gallery updated", "destination": dest}
+
+
+@app.post("/api/admin/travel-gallery/{dest_id}/photos")
+async def admin_upload_travel_gallery_photo(
+  dest_id: str,
+  file: UploadFile = File(...),
+  _: dict = Depends(require_admin),
+):
+  dest = mongo_service.find_travel_gallery_by_id(dest_id)
+  if not dest:
+    raise HTTPException(status_code=404, detail="destination not found")
+
+  original = (file.filename or "").strip()
+  if not original:
+    raise HTTPException(status_code=400, detail="Choose a photo file to upload")
+  ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+  if ext not in {"jpg", "jpeg", "png", "webp", "gif"}:
+    raise HTTPException(status_code=400, detail="Upload a JPG, PNG, WEBP, or GIF image")
+
+  data = await file.read()
+  if len(data) > 8 * 1024 * 1024:
+    raise HTTPException(status_code=400, detail="Image must be 8MB or smaller")
+
+  safe_dest = re.sub(r"[^a-z0-9-]", "", dest_id.strip().lower())
+  stem = re.sub(r"[^a-zA-Z0-9._-]", "_", original.rsplit(".", 1)[0])[:48] or "photo"
+  filename = f"{stem}-{uuid.uuid4().hex[:8]}.{ext}"
+  folder = ROOT_DIR / "frontend" / "assets" / "gallery" / safe_dest
+  folder.mkdir(parents=True, exist_ok=True)
+  target = folder / filename
+  target.write_bytes(data)
+
+  photo_path = f"/assets/gallery/{safe_dest}/{filename}"
+  if not mongo_service.append_travel_gallery_photo(safe_dest, photo_path):
+    raise HTTPException(status_code=404, detail="destination not found")
+
+  refreshed = mongo_service.find_travel_gallery_by_id(safe_dest)
+  return {"message": "photo uploaded", "path": photo_path, "destination": refreshed}
 
 
 if __name__ == "__main__":

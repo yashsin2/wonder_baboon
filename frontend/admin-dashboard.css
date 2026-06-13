@@ -1037,6 +1037,72 @@ body.admin-page {
   font-family: inherit;
 }
 
-.btn-cancel:hover {
-  background: #f8fafc;
+.gallery-save-row {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gallery-editor-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.gallery-editor-section h4 {
+  margin: 0 0 12px;
+  font-size: 0.95rem;
+}
+
+.gallery-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.gallery-section-head h4 {
+  margin: 0;
+}
+
+.gallery-edit-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--adm-border);
+}
+
+.gallery-edit-row:last-child {
+  border-bottom: none;
+}
+
+.gallery-remove-row {
+  margin-top: 8px;
+}
+
+.gallery-upload-row {
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+#galleryPhotos {
+  width: 100%;
+  min-height: 120px;
+  padding: 10px 11px;
+  border: 1px solid var(--adm-border);
+  border-radius: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  resize: vertical;
+}
+
+#galleryEditor textarea {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid var(--adm-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: vertical;
 }

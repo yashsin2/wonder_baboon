@@ -21,6 +21,8 @@
   # Internal: /page → page.html (address bar stays clean)
   RewriteRule ^upcoming-trips/?$ upcoming-trips.html [L,NC]
   RewriteRule ^previous-trips/?$ previous-trips.html [L,NC]
+  # Travel Gallery (clean URL — no extra rule needed beyond this line)
+  RewriteRule ^previous-adventures/?$ previous-adventures.html [L,NC]
   RewriteRule ^settings/?$ settings.html [L,NC]
   RewriteRule ^auth/?$ auth.html [L,NC]
   RewriteRule ^admin-dashboard/?$ admin-dashboard.html [L,NC]

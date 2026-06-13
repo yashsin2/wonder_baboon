@@ -31,6 +31,7 @@
         <button type="button" class="sidebar-nav-btn active" data-tab="stats-tab">Overview</button>
         <button type="button" class="sidebar-nav-btn" data-tab="bookings-tab">Booking details</button>
         <button type="button" class="sidebar-nav-btn" data-tab="trips-tab">Add trip</button>
+        <button type="button" class="sidebar-nav-btn" data-tab="gallery-tab">Travel Gallery</button>
       </nav>
       <div class="sidebar-footer">
         <button type="button" id="logoutBtn" class="btn-logout">Log out</button>
@@ -165,12 +166,26 @@
             </div>
           </div>
         </div>
+
+        <div id="gallery-tab" class="tab-content">
+          <div class="form-section">
+            <h3>Travel Gallery</h3>
+            <p class="form-hint">Manage map pins, journal pages, photos, and traveler reviews on the public Travel Gallery page.</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="galleryDestSelect">Destination</label>
+                <select id="galleryDestSelect"></select>
+              </div>
+            </div>
+            <div id="galleryEditor" hidden></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script type="module" src="./js/admin-dashboard.js?v=4f934e3"></script>
-  <script src="/version-check.js?v=4f934e3" defer></script>
+  <script type="module" src="./js/admin-dashboard.js?v=20250604"></script>
+  <script src="/version-check.js?v=20250604a" defer></script>
 </body>
 </html>

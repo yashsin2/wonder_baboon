@@ -356,3 +356,78 @@ class AdminTripUpdateRequest(BaseModel):
     if not data:
       raise ValueError("submit at least one field to update")
     return self
+
+
+GalleryStatus = Literal["completed", "coming_soon"]
+
+
+class TravelGalleryTestimonial(BaseModel):
+  name: str = Field(min_length=1, max_length=80)
+  quote: str = Field(min_length=3, max_length=5000)
+  avatar: Optional[str] = Field(default=None, max_length=240)
+
+  @field_validator("name")
+  @classmethod
+  def validate_name(cls, value: str) -> str:
+    return sanitize_text(value, "name")
+
+  @field_validator("quote")
+  @classmethod
+  def validate_quote(cls, value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) < 3:
+      raise ValueError("quote is required")
+    if re.search(r"(<script|</script|<iframe)", cleaned, re.IGNORECASE):
+      raise ValueError("quote contains invalid content")
+    return cleaned
+
+
+class TravelGalleryHighlight(BaseModel):
+  title: str = Field(min_length=1, max_length=120)
+  image: str = Field(min_length=3, max_length=240)
+
+  @field_validator("title")
+  @classmethod
+  def validate_title(cls, value: str) -> str:
+    return sanitize_text(value)
+
+
+class TravelGalleryUpdateRequest(BaseModel):
+  state: Optional[str] = Field(default=None, min_length=2, max_length=80)
+  title: Optional[str] = Field(default=None, min_length=2, max_length=120)
+  trip_label: Optional[str] = Field(default=None, max_length=120)
+  trip_meta: Optional[str] = Field(default=None, max_length=240)
+  status: Optional[GalleryStatus] = None
+  pin_subtitle: Optional[str] = Field(default=None, max_length=60)
+  dates: Optional[str] = Field(default=None, max_length=80)
+  travelers: Optional[int] = Field(default=None, ge=0, le=500)
+  days: Optional[int] = Field(default=None, ge=0, le=90)
+  photo_count_label: Optional[str] = Field(default=None, max_length=20)
+  hero_image: Optional[str] = Field(default=None, max_length=240)
+  story: Optional[str] = Field(default=None, max_length=1200)
+  reel_url: Optional[str] = Field(default=None, max_length=500)
+  photos: Optional[List[str]] = None
+  testimonials: Optional[List[TravelGalleryTestimonial]] = None
+  highlights: Optional[List[TravelGalleryHighlight]] = None
+
+  @field_validator("state", "title", "trip_label", "trip_meta", "pin_subtitle", "dates", "photo_count_label")
+  @classmethod
+  def validate_optional_text(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    return sanitize_text(value)
+
+  @field_validator("photos")
+  @classmethod
+  def validate_photos(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+    if value is None:
+      return None
+    cleaned = [str(p).strip() for p in value if str(p).strip()]
+    return cleaned[:120]
+
+  @model_validator(mode="after")
+  def at_least_one_gallery_field(self) -> "TravelGalleryUpdateRequest":
+    data = self.model_dump(exclude_unset=True)
+    if not data:
+      raise ValueError("submit at least one field to update")
+    return self

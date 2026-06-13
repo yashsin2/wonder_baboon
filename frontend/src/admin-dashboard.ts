@@ -1,4 +1,5 @@
 import { API_BASE_URL, getSession, parseError, ROUTES, Trip, TripStyleSlug } from "./config.js";
+import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js";
 import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 
 const { token, user } = getSession();
@@ -420,6 +421,7 @@ const TAB_COPY: Record<string, readonly [string, string]> = {
   "stats-tab": ["Overview", "Payment confirmation overview and catalogue."],
   "bookings-tab": ["Booking details", "Search and review every reservation."],
   "trips-tab": ["Trips", "Add packages, upload PDF itineraries, edit or remove catalogue trips."],
+  "gallery-tab": ["Travel Gallery", "Edit photos, reviews, and journal content for past trips."],
 };
 
 function setActiveTab(tabId: string): void {
@@ -437,6 +439,7 @@ function setActiveTab(tabId: string): void {
     subEl.textContent = copy[1];
   }
   if (tabId === "trips-tab") void loadTripManageList(lastTripManageSearch);
+  if (tabId === "gallery-tab") void loadAdminGalleryTab(authHeaders);
 }
 
 document.querySelectorAll(".sidebar-nav-btn").forEach((btn) => {
@@ -1056,6 +1059,7 @@ document.getElementById("tripManageList")?.addEventListener("change", async (e) 
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
+  initAdminGallery(authHeaders);
   await loadStats();
   try {
     lastBookingSearch = "";

@@ -20,7 +20,10 @@
   <meta charset="UTF-8">
   
   <title>Wonder Baboon</title>
-  <link rel="stylesheet" href="/styles.css?v=4f934e3">
+  <link rel="icon" href="/assets/logo.png" type="image/png" />
+  <link rel="apple-touch-icon" href="/assets/logo.png" />
+  <link rel="stylesheet" href="/styles.css?v=20250604">
+  <link rel="stylesheet" href="/previous-adventures.css?v=20250604">
   <!-- Swiper CSS -->
 <link
 rel="stylesheet"
@@ -36,12 +39,11 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 
   <!-- Swiper JS -->
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
-  <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
-    <span></span><span></span><span></span>
-  </button>
-
   <header class="site-header">
   <div class="header-container">
+    <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
     <a class="logo" href="/">
       <img src="./assets/logo.png" alt="Wonder Baboon Logo">
       <div class="logo-text-block">
@@ -52,15 +54,18 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 
     <nav class="nav-links" data-smooth-scroll>
       <a href="#trips">Upcoming Trips</a>
-      <a href="#gallery">Previous Travels</a>
+      <a href="/previous-adventures">Travel Gallery</a>
       <a href="#about">About Us</a>
       <a href="#travel-style">Travel Styles</a>
     </nav>
 
     <div class="header-right">
-      <div class="search-bar">
-        <input id="headerTripSearch" type="search" placeholder="Search trips by name or place…" autocomplete="off">
-        <button type="button" id="headerTripSearchBtn" aria-label="Search trips">🔍</button>
+      <div class="search-bar wb-search wb-search--header">
+        <div class="wb-search-field">
+          <svg class="wb-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input id="headerTripSearch" type="search" placeholder="Find a trip…" autocomplete="off" />
+        </div>
+        <button type="button" id="headerTripSearchBtn" class="wb-search-go" aria-label="Search trips">Go</button>
       </div>
       <a class="phone" href="tel:+919151584677">📞 +91 91515 84677</a>
     </div>
@@ -90,9 +95,13 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
         <span>Your trips</span>
       </a>
-      <a class="up-nav-item" href="/previous-trips" data-page="previous">
+      <a class="up-nav-item" href="/previous-adventures" data-page="adventures">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.5-7-12a7 7 0 1 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
-        <span>Previous Trips</span>
+        <span>Travel Gallery</span>
+      </a>
+      <a class="up-nav-item" href="/previous-trips" data-page="previous">
+        <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 10h8M8 14h5"/></svg></span>
+        <span>Your past bookings</span>
       </a>
       <a class="up-nav-item" href="/settings" data-page="settings">
         <span class="up-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.15.68.4.95.71"/></svg></span>
@@ -127,17 +136,24 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
                 <a href="#tours" class="cta-btn">Let's Go</a>
             </div>
 
-            <div class="search-box">
-                <input id="planDestination" type="text" placeholder="Where do you want to go?">
-                <select id="heroTravelStyle" class="travel-style-select">
-                    <option value="">Travel vibe</option>
+            <div class="search-box wb-search wb-search--hero">
+                <div class="wb-search-field wb-search-field--select">
+                  <select id="heroTravelStyle" class="wb-search-select" aria-label="Travel style">
+                    <option value="">Choose travel style</option>
                     <option value="backpackers">The Backpackers</option>
-                    <option value="motorcycle_diaries">The Motorcycle Diaries</option>
+                    <option value="motorcycle_diaries">Motorcycle Diaries</option>
                     <option value="dolce_far_niente">Dolce far niente</option>
                     <option value="hikers">The Hikers</option>
-                </select>
-                <input id="planDate" type="date" placeholder="When do you want to go?">
-                <button id="planTripBtn" type="button">Search trips</button>
+                  </select>
+                </div>
+                <span class="wb-search-sep" aria-hidden="true"></span>
+                <div class="wb-search-field wb-search-field--select">
+                  <select id="heroTravelMonth" class="wb-search-select" aria-label="Travel month">
+                    <option value="">Choose month</option>
+                  </select>
+                </div>
+                <button id="planTripBtn" type="button" class="wb-search-submit">Search trips</button>
+                <div class="wb-select-backdrop" id="heroSelectBackdrop" hidden aria-hidden="true"></div>
             </div>
         </div>
 
@@ -164,59 +180,12 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
     <div class="swiper-pagination trips-pagination"></div>
   </div>
 </section>
-<section class="gallery gallery--previous-simple" id="gallery">
-  <h2 class="gallery-title">Previous Travels</h2>
-
-  <div class="previous-travels-inner">
-    <div class="swiper previousTravelsSwiper">
-      <div class="swiper-wrapper">
-        <div class="swiper-slide"><img src="./assets/lake.jpg" alt="Lake"></div>
-        <div class="swiper-slide"><img src="./assets/monastery.jpg" alt="Monastery"></div>
-        <div class="swiper-slide"><img src="./assets/banaras.jpg" alt="Banaras"></div>
-        <div class="swiper-slide"><img src="./assets/rishikesh1.jpg" alt="Rishikesh"></div>
-        <div class="swiper-slide"><img src="./assets/rishikesh2.jpg" alt="Rishikesh streets"></div>
-        <div class="swiper-slide"><img src="./assets/nagtibba1.jpg" alt="Nagtibba Trek"></div>
-        <div class="swiper-slide"><img src="./assets/nagtibba2.jpg" alt="Nagtibba Views"></div>
-        <div class="swiper-slide"><img src="./assets/nagtibba3.jpg" alt="Nagtibba Camping"></div>
-        <div class="swiper-slide"><img src="./assets/nagtibba4.jpg" alt="Nagtibba Summit"></div>
-      </div>
-      <div class="swiper-pagination previous-travels-dots"></div>
-    </div>
-    <script>
-      (function () {
-        if (typeof Swiper === "undefined") return;
-        new Swiper(".previousTravelsSwiper", {
-          slidesPerView: 3,
-          slidesPerGroup: 3,
-          spaceBetween: 22,
-          speed: 0,
-          loop: false,
-          allowTouchMove: true,
-          autoplay: false,
-          pagination: {
-            el: ".previous-travels-dots",
-            clickable: true,
-          },
-          breakpoints: {
-            0: {
-              slidesPerView: 1,
-              slidesPerGroup: 1,
-              spaceBetween: 16,
-            },
-            560: {
-              slidesPerView: 2,
-              slidesPerGroup: 2,
-              spaceBetween: 18,
-            },
-            900: {
-              slidesPerView: 3,
-              slidesPerGroup: 3,
-              spaceBetween: 22,
-            },
-          },
-        });
-      })();
-    </script>
+<section class="gallery gallery--previous-featured" id="gallery">
+  <h2 class="gallery-title">Our Journey <em>So Far</em></h2>
+  <p class="gallery-tagline">Every pin holds a story. Tap a trip to see photos, videos &amp; traveler comments.</p>
+  <div class="home-adv-grid" id="homePreviousTravels" aria-live="polite"></div>
+  <div class="home-adv-cta-wrap">
+    <a class="home-adv-cta" href="/previous-adventures">Open the travel gallery →</a>
   </div>
 </section>
 <!-- About Us Section -->
@@ -286,7 +255,7 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
     <div class="footer-section">
       <h4>Quick Links</h4>
       <a href="#trips">Upcoming Trips</a>
-      <a href="#gallery">Gallery</a>
+      <a href="/previous-adventures">Travel Gallery</a>
       <a href="#about">About Us</a>
     </div>
     <div class="footer-section">
@@ -295,12 +264,29 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
       <p>📧 baboonwonder@gmail.com</p>
       <p>📍 Rishikesh, Uttarakhand</p>
     </div>
-    <div class="footer-section">
+    <div class="footer-section footer-section--follow">
       <h4>Follow Us</h4>
       <div class="social-links">
-        <a href="#" class="social-link">📘</a>
-        <a href="#" class="social-link">📷</a>
-        <a href="#" class="social-link">🐦</a>
+        <a
+          href="https://wa.me/919151584677?text=hey%20i%20want%20to%20book%20a%20trip"
+          class="social-link social-link--whatsapp"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="WhatsApp — hey i want to book a trip"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.884 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          <span class="social-link-label">WhatsApp</span>
+        </a>
+        <a
+          href="https://instagram.com/wonder_baboon"
+          class="social-link social-link--instagram"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Instagram @wonder_baboon"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7.8 2h8.4C19.4 2 22 4.6 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8C4.6 22 2 19.4 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2m-.2 2A3.6 3.6 0 0 0 4 7.6v8.8C4 18.39 5.61 20 7.6 20h8.8a3.6 3.6 0 0 0 3.6-3.6V7.6C20 5.61 18.39 4 16.4 4H7.6m9.65 1.5a1.25 1.25 0 0 1 1.25 1.25A1.25 1.25 0 0 1 17.25 8 1.25 1.25 0 0 1 16 6.75a1.25 1.25 0 0 1 1.25-1.25M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+          <span class="social-link-label">Instagram</span>
+        </a>
       </div>
     </div>
   </div>
@@ -309,8 +295,8 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
   </div>
 </footer>
 
-<script type="module" src="/js/script.js?v=4f934e3"></script>
-<script type="module" src="/js/user-panel.js?v=4f934e3"></script>
-<script src="/version-check.js?v=4f934e3" defer></script>
+<script type="module" src="/js/script.js?v=20250604"></script>
+<script type="module" src="/js/user-panel.js?v=20250604"></script>
+<script src="/version-check.js?v=20250604a" defer></script>
 </body>
 </html>
