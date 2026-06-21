@@ -1037,28 +1037,79 @@ function handleHeroFindTrips(): void {
 }
 
 /**
- * Pause hero Ken Burns slideshow when scrolled off-screen — keeps GPU free
- * while the user scrolls the rest of the page.
+ * Crossfade hero slideshow — overlaps fades so no slide gap (esp. lake loop).
+ * Pauses Ken Burns + rotation when hero scrolls off-screen.
  */
-function setupHeroAnimationPause(): void {
+function setupHeroSlideshow(): void {
   const hero = document.querySelector<HTMLElement>(".hero-cinematic");
-  if (!hero) return;
+  const slides = Array.from(document.querySelectorAll<HTMLElement>(".hero-slideshow .hero-slide"));
+  if (!hero || !slides.length) return;
+
+  slides.forEach((slide) => {
+    const match = slide.style.backgroundImage.match(/url\(["']?([^"')]+)/i);
+    if (match?.[1]) {
+      const img = new Image();
+      img.src = match[1];
+    }
+  });
 
   const prefersReducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
   if (prefersReducedMotion) {
     hero.classList.add("is-offscreen");
+    slides.forEach((slide, i) => {
+      slide.classList.toggle("is-active", i === 0);
+    });
     return;
   }
 
+  let index = slides.findIndex((slide) => slide.classList.contains("is-active"));
+  if (index < 0) index = 0;
+
+  slides.forEach((slide, i) => {
+    slide.classList.toggle("is-active", i === index);
+    slide.style.opacity = i === index ? "1" : "0";
+  });
+
+  const HOLD_MS = 4200;
+  let timer: number | undefined;
+  let visible = true;
+
+  const advance = (): void => {
+    if (!visible) return;
+    const prev = slides[index];
+    index = (index + 1) % slides.length;
+    const next = slides[index];
+    next.classList.add("is-active");
+    next.style.opacity = "1";
+    prev.style.opacity = "0";
+    prev.classList.remove("is-active");
+  };
+
+  timer = window.setInterval(advance, HOLD_MS);
+
   const observer = new IntersectionObserver(
     ([entry]) => {
-      hero.classList.toggle("is-offscreen", !entry?.isIntersecting);
+      visible = Boolean(entry?.isIntersecting);
+      hero.classList.toggle("is-offscreen", !visible);
     },
     { root: null, threshold: 0, rootMargin: "0px" },
   );
   observer.observe(hero);
+
+  window.addEventListener(
+    "pagehide",
+    () => {
+      if (timer !== undefined) window.clearInterval(timer);
+    },
+    { once: true },
+  );
+}
+
+function setupHeroAnimationPause(): void {
+  setupHeroSlideshow();
 }
 
 function setupTripCardOpenDetail(): void {

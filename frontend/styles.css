@@ -6242,31 +6242,26 @@ body[data-trip-style] .logo .logo-text {
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 0;
-  transform: scale(1.05);
-  animation: heroKenBurns 15s linear infinite;
+  transform: scale(1.05) translate3d(0, 0, 0);
+  transition: opacity 0.85s ease-in-out;
+  will-change: opacity, transform;
 }
 
-.hero-cinematic.is-offscreen .hero-slide {
+.hero-slide.is-active {
+  opacity: 1;
+  animation: heroKenBurnsZoom 12s linear infinite;
+}
+
+.hero-cinematic.is-offscreen .hero-slide.is-active {
   animation-play-state: paused;
 }
 
-@keyframes heroKenBurns {
-  0%     { opacity: 0; transform: scale(1.05) translate3d(0, 0, 0); }
-  2%     { opacity: 1; }
-  14%    { opacity: 1; transform: scale(1.12) translate3d(-1%, -0.5%, 0); }
-  16.67% { opacity: 0; transform: scale(1.12) translate3d(-1%, -0.5%, 0); }
-  100%   { opacity: 0; transform: scale(1.05) translate3d(0, 0, 0); }
+@keyframes heroKenBurnsZoom {
+  0%   { transform: scale(1.05) translate3d(0, 0, 0); }
+  100% { transform: scale(1.12) translate3d(-1%, -0.5%, 0); }
 }
 
-.hero-slide:nth-child(1) { animation-delay:    0s; }
-.hero-slide:nth-child(2) { animation-delay:  2.5s; }
-.hero-slide:nth-child(3) { animation-delay:    5s; }
-.hero-slide:nth-child(4) { animation-delay:  7.5s; }
-.hero-slide:nth-child(5) { animation-delay:   10s; }
-.hero-slide:nth-child(6) { animation-delay: 12.5s; }
-
-/* First slide visible immediately on page load (before animation kicks in). */
-.hero-slide.is-active { opacity: 1; }
+/* Legacy keyframes removed — opacity crossfade handled in script.ts */
 
 /* ---------- Overlays: scrim, vignette, grain, letterbox ---------- */
 .hero-scrim {
@@ -6761,8 +6756,13 @@ body[data-trip-style] .logo .logo-text {
 @media (prefers-reduced-motion: reduce) {
   .hero-slide {
     animation: none;
-    opacity: 1;
+    transition: none;
+    opacity: 0;
     transform: none;
+  }
+  .hero-slide.is-active {
+    opacity: 1;
+    animation: none;
   }
   .hero-slide:not(.is-active) { opacity: 0; }
   .hero-flipper { animation: none; width: 3.6em; }
