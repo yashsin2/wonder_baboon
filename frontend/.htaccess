@@ -30,6 +30,10 @@
   RewriteRule ^motorcycle-diaries/?$ motorcycle-diaries.html [L,NC]
   RewriteRule ^dolce-far-niente/?$ dolce-far-niente.html [L,NC]
   RewriteRule ^hikers/?$ hikers.html [L,NC]
+
+  # Legacy favicon paths → current files (bookmarks + Google default /favicon.ico)
+  RewriteRule ^favicon\.ico$ wb-favicon.ico [L,NC]
+  RewriteRule ^favicon-48\.png$ wb-favicon-48.png [L,NC]
 </IfModule>
 
 DirectoryIndex index.html
@@ -44,5 +48,8 @@ DirectoryIndex index.html
   </FilesMatch>
   <FilesMatch "\.(css|js)$">
     Header set Cache-Control "public, max-age=3600"
+  </FilesMatch>
+  <FilesMatch "^(wb-favicon.*|favicon.*|apple-touch-icon.*)$">
+    Header set Cache-Control "public, max-age=86400"
   </FilesMatch>
 </IfModule>
