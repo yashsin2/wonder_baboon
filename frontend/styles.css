@@ -6224,7 +6224,7 @@ body[data-trip-style] .logo .logo-text {
   isolation: isolate;
   color: #fff;
   text-align: center;
-  background: #000;
+  background: #121c24;
 }
 
 /* ---------- Slideshow ---------- */
@@ -6238,21 +6238,38 @@ body[data-trip-style] .logo .logo-text {
 .hero-slide {
   position: absolute;
   inset: -4%;
+  z-index: 0;
   background-position: center;
   background-size: cover;
   background-repeat: no-repeat;
   opacity: 0;
   transform: scale(1.05) translate3d(0, 0, 0);
-  transition: opacity 0.85s ease-in-out;
+  transition: opacity 0.65s ease-in-out;
   will-change: opacity, transform;
+  animation: heroKenBurnsZoom 14s linear infinite;
+  backface-visibility: hidden;
 }
 
 .hero-slide.is-active {
   opacity: 1;
-  animation: heroKenBurnsZoom 12s linear infinite;
+  z-index: 1;
 }
 
-.hero-cinematic.is-offscreen .hero-slide.is-active {
+.hero-slide.is-entering {
+  z-index: 2;
+  opacity: 0;
+}
+
+.hero-slide.is-entering.is-active {
+  opacity: 1;
+}
+
+.hero-slide.is-leaving {
+  opacity: 0;
+  z-index: 1;
+}
+
+.hero-cinematic.is-offscreen .hero-slide {
   animation-play-state: paused;
 }
 

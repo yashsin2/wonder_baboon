@@ -1037,21 +1037,41 @@ function handleHeroFindTrips(): void {
 }
 
 /**
- * Crossfade hero slideshow — overlaps fades so no slide gap (esp. lake loop).
- * Pauses Ken Burns + rotation when hero scrolls off-screen.
+ * Crossfade hero slideshow — incoming slide stacks on top so the loop back
+ * to lake (first/DOM-bottom slide) never reveals the dark hero background.
  */
+function heroSlideImageUrl(slide: HTMLElement): string | null {
+  const match = slide.style.backgroundImage.match(/url\(["']?([^"')]+)/i);
+  return match?.[1] ?? null;
+}
+
+async function preloadHeroSlides(slides: HTMLElement[]): Promise<void> {
+  await Promise.all(
+    slides.map(async (slide) => {
+      const src = heroSlideImageUrl(slide);
+      if (!src) return;
+      const img = new Image();
+      img.src = src;
+      if (typeof img.decode === "function") {
+        try {
+          await img.decode();
+        } catch {
+          /* fall through */
+        }
+      } else {
+        await new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+        });
+      }
+    }),
+  );
+}
+
 function setupHeroSlideshow(): void {
   const hero = document.querySelector<HTMLElement>(".hero-cinematic");
   const slides = Array.from(document.querySelectorAll<HTMLElement>(".hero-slideshow .hero-slide"));
   if (!hero || !slides.length) return;
-
-  slides.forEach((slide) => {
-    const match = slide.style.backgroundImage.match(/url\(["']?([^"')]+)/i);
-    if (match?.[1]) {
-      const img = new Image();
-      img.src = match[1];
-    }
-  });
 
   const prefersReducedMotion =
     typeof window.matchMedia === "function" &&
@@ -1069,26 +1089,62 @@ function setupHeroSlideshow(): void {
   if (index < 0) index = 0;
 
   slides.forEach((slide, i) => {
+    slide.classList.remove("is-entering", "is-leaving");
     slide.classList.toggle("is-active", i === index);
-    slide.style.opacity = i === index ? "1" : "0";
   });
 
   const HOLD_MS = 4200;
   let timer: number | undefined;
   let visible = true;
+  let transitioning = false;
 
-  const advance = (): void => {
-    if (!visible) return;
-    const prev = slides[index];
-    index = (index + 1) % slides.length;
-    const next = slides[index];
-    next.classList.add("is-active");
-    next.style.opacity = "1";
-    prev.style.opacity = "0";
-    prev.classList.remove("is-active");
+  const finishLeave = (prev: HTMLElement): void => {
+    const current = slides[index];
+    prev.classList.remove("is-leaving", "is-active");
+    prev.removeEventListener("transitionend", onLeaveEnd);
+    current.classList.remove("is-entering");
+    current.classList.add("is-active");
+    transitioning = false;
   };
 
-  timer = window.setInterval(advance, HOLD_MS);
+  const onLeaveEnd = (event: TransitionEvent): void => {
+    if (event.propertyName !== "opacity") return;
+    finishLeave(event.currentTarget as HTMLElement);
+  };
+
+  const crossfadeTo = (nextIndex: number): void => {
+    if (transitioning || nextIndex === index) return;
+    transitioning = true;
+
+    const prev = slides[index];
+    const next = slides[nextIndex];
+    index = nextIndex;
+
+    next.classList.remove("is-leaving");
+    next.classList.add("is-entering");
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        next.classList.add("is-active");
+        prev.classList.add("is-leaving");
+        prev.classList.remove("is-active");
+      });
+    });
+
+    prev.addEventListener("transitionend", onLeaveEnd);
+    window.setTimeout(() => {
+      if (prev.classList.contains("is-leaving")) finishLeave(prev);
+    }, 800);
+  };
+
+  const advance = (): void => {
+    if (!visible || transitioning) return;
+    crossfadeTo((index + 1) % slides.length);
+  };
+
+  void preloadHeroSlides(slides).then(() => {
+    timer = window.setInterval(advance, HOLD_MS);
+  });
 
   const observer = new IntersectionObserver(
     ([entry]) => {
