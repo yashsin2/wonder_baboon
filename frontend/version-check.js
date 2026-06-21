@@ -2,38 +2,10 @@
   var KEY = "wb_app_version";
   var BANNER_ID = "wb-update-banner";
 
-  function allowContextMenu(target) {
-    return (
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target instanceof HTMLSelectElement ||
-      (target instanceof HTMLElement && target.isContentEditable)
-    );
-  }
-
   document.addEventListener(
     "contextmenu",
     function (e) {
-      if (allowContextMenu(e.target)) return;
       e.preventDefault();
-    },
-    { capture: true }
-  );
-
-  document.addEventListener(
-    "keydown",
-    function (e) {
-      if (e.key === "F12") {
-        e.preventDefault();
-        return;
-      }
-      if (e.ctrlKey && e.shiftKey && /^[ijc]$/i.test(e.key)) {
-        e.preventDefault();
-        return;
-      }
-      if (e.ctrlKey && !e.shiftKey && /^u$/i.test(e.key)) {
-        e.preventDefault();
-      }
     },
     { capture: true }
   );

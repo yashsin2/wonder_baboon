@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import logging
 import re
@@ -11,7 +12,16 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from auth_utils import create_token, decode_token, hash_password, require_admin, sanitize_text, verify_password
+from auth_utils import (
+  create_pending_booking_token,
+  create_token,
+  decode_pending_booking_token,
+  decode_token,
+  hash_password,
+  require_admin,
+  sanitize_text,
+  verify_password,
+)
 from config import (
   CORS_ORIGINS,
   HOST,
@@ -47,6 +57,11 @@ from services.email_service import email_service
 from services.itinerary_pdf import pdf_bytes_to_itinerary_html
 from services.mongo_service import mongo_service
 from services.otp_service import otp_service
+from services.trip_completion_service import (
+  process_trip_completion_emails,
+  send_test_trip_completed_email,
+  start_trip_completion_worker,
+)
 from services.razorpay_service import (
   MIN_AMOUNT_PAISE,
   RazorpayAuthError,
@@ -72,6 +87,16 @@ def _inr_label(amount: int) -> str:
   except (TypeError, ValueError):
     return "₹—"
   return f"₹{n:,}"
+
+
+def _payment_amounts_for_kind(package_total: int, payment_kind: str) -> tuple[int, int, int]:
+  """Return (pay_now_inr, balance_inr, amount_paise) for advance or full payment."""
+  total = max(1, int(package_total))
+  kind = (payment_kind or "advance").strip()
+  if kind == "full":
+    return total, 0, max(MIN_AMOUNT_PAISE, total * 100)
+  advance_inr, balance_inr = compute_advance_inr(total)
+  return advance_inr, balance_inr, max(MIN_AMOUNT_PAISE, advance_inr * 100)
 
 
 def _run_email_background(fn, *args, **kwargs) -> None:
@@ -237,21 +262,50 @@ def _notify_admin_booking_attempt(doc: Dict[str, Any]) -> None:
   email_service.notify_new_booking(doc, payment_pending=True)
 
 
-def _save_catalogue_booking(doc: Dict[str, Any]) -> str:
-  """Persist catalogue booking; emails depend on whether online advance is required."""
+def _save_catalogue_booking(doc: Dict[str, Any]) -> Dict[str, Any]:
+  """Persist catalogue booking or hold in a signed token until Razorpay advance succeeds."""
   if razorpay_enabled():
+    mongo_service.ensure_ready()
     doc["confirmed"] = False
     doc["requiresOnlineAdvance"] = True
-  booking_id = mongo_service.insert_booking(doc)
-  if razorpay_enabled():
+    if "createdAt" not in doc:
+      doc["createdAt"] = datetime.utcnow()
     _run_email_background(_notify_admin_booking_attempt, doc)
+    inbox = _traveler_inbox_email(doc)
+    if inbox:
+      estimate = mongo_service.package_total_inr_for_booking(doc, None)
+      _run_email_background(
+        email_service.notify_booking_pending_traveler,
+        inbox,
+        doc,
+        package_total_inr=estimate,
+      )
+    pending_token = create_pending_booking_token(doc)
+    logger.info(
+      "booking attempt (not saved until advance) trip=%s email=%s",
+      doc.get("travelDestination"),
+      doc.get("email"),
+    )
+    return _booking_response(pending_token=pending_token)
+
+  booking_id = mongo_service.insert_booking(doc)
+  _notify_booking_created(doc)
+  return _booking_response(booking_id=booking_id)
+
+
+def _booking_response(
+  *,
+  booking_id: Optional[str] = None,
+  pending_token: Optional[str] = None,
+) -> Dict[str, Any]:
+  if pending_token:
+    out: Dict[str, Any] = {
+      "message": "details received — complete advance payment to confirm your seat",
+      "pending_token": pending_token,
+      "saved_to_database": False,
+    }
   else:
-    _notify_booking_created(doc)
-  return booking_id
-
-
-def _booking_response(booking_id: str) -> Dict[str, Any]:
-  out: Dict[str, Any] = {"message": "booking saved", "booking_id": booking_id}
+    out = {"message": "booking saved", "booking_id": booking_id, "saved_to_database": True}
   if razorpay_enabled():
     out["razorpay_enabled"] = True
     out["advance_percent"] = advance_percent()
@@ -426,6 +480,27 @@ def startup_event() -> None:
       logger.warning("Mongo not connected at startup; API will return 503 for DB endpoints")
   except Exception:
     logger.exception("Mongo startup failed")
+  start_trip_completion_worker()
+
+
+@app.post("/api/admin/email/test-trip-completed")
+def admin_test_trip_completed_email(payload: dict, _: dict = Depends(require_admin)):
+  to = str(payload.get("to") or "").strip().lower()
+  if not to or "@" not in to:
+    raise HTTPException(status_code=400, detail="Provide a valid 'to' email address")
+  ok, err = send_test_trip_completed_email(to)
+  if not ok:
+    raise HTTPException(status_code=500, detail=err or "could not send test email")
+  return {"message": f"Trip-completed test email sent to {to}"}
+
+
+@app.post("/api/admin/trip-completion/run")
+def admin_run_trip_completion_emails(_: dict = Depends(require_admin)):
+  """Manually trigger trip-completed emails (fully paid + past end date)."""
+  if not mongo_service.is_connected():
+    raise HTTPException(status_code=503, detail="database unavailable")
+  sent = process_trip_completion_emails()
+  return {"message": "trip completion check finished", "emails_sent": sent}
 
 
 @app.get("/api/health")
@@ -515,11 +590,84 @@ def razorpay_config():
 
 @app.post("/api/payments/razorpay/create-order")
 def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
+  pending_token = (payload.pending_token or "").strip()
   bid = (payload.booking_id or "").strip()
-  logger.info("create-order start booking_id=%s", bid)
+  logger.info("create-order start booking_id=%s pending=%s kind=%s", bid or "—", bool(pending_token), payload.payment_kind)
   if not razorpay_enabled():
     logger.warning("create-order rejected: razorpay not configured")
     raise HTTPException(status_code=503, detail="online advance payment is not configured")
+
+  if pending_token:
+    doc = decode_pending_booking_token(pending_token)
+    mongo_service.ensure_ready()
+    package_total = mongo_service.package_total_inr_for_booking(doc, None)
+    if package_total is None:
+      logger.warning(
+        "create-order pending no package total tripId=%s destination=%s",
+        doc.get("tripId"),
+        doc.get("travelDestination"),
+      )
+      raise HTTPException(
+        status_code=400,
+        detail="this trip has no catalogue price; online advance is not available",
+      )
+    advance_inr, balance_inr, amount_paise = _payment_amounts_for_kind(package_total, payload.payment_kind)
+    receipt = f"pend_{hashlib.sha256(pending_token.encode()).hexdigest()[:20]}"
+    logger.info(
+      "create-order pending pricing kind=%s package_total_inr=%s pay_now_inr=%s amount_paise=%s people=%s",
+      payload.payment_kind,
+      package_total,
+      advance_inr,
+      amount_paise,
+      doc.get("numberOfPeople"),
+    )
+    try:
+      order = razorpay_create_order(
+        amount_paise,
+        receipt=receipt,
+        notes={"flow": "pending_booking", "payment_kind": payload.payment_kind},
+      )
+    except RazorpayAuthError as error:
+      logger.error("create-order RazorpayAuthError pending: %s", error)
+      raise HTTPException(
+        status_code=401,
+        detail=(
+          "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env "
+          "(Test mode keys from Dashboard → Account & Settings → API Keys), then restart the API."
+        ),
+      ) from error
+    except (RazorpayOrderError, ValueError) as error:
+      logger.error("create-order order error pending: %s", error, exc_info=True)
+      raise HTTPException(
+        status_code=500,
+        detail=str(error) or "Could not create Razorpay order",
+      ) from error
+    order_id = str(order.get("id") or "").strip()
+    if not order_id:
+      logger.error("create-order missing order id pending response=%s", order)
+      raise HTTPException(status_code=502, detail="could not create payment order")
+    razorpay_amount = int(order.get("amount") or amount_paise)
+    if razorpay_amount < MIN_AMOUNT_PAISE:
+      raise HTTPException(status_code=502, detail="Razorpay returned an invalid order amount")
+    logger.info(
+      "create-order ok pending order_id=%s amount_paise=%s key_prefix=%s",
+      order_id,
+      razorpay_amount,
+      (RAZORPAY_KEY_ID or "")[:16],
+    )
+    return {
+      "order_id": order_id,
+      "amount": razorpay_amount,
+      "amount_paise": razorpay_amount,
+      "currency": "INR",
+      "key_id": RAZORPAY_KEY_ID,
+      "package_total_inr": package_total,
+      "advance_payment_inr": advance_inr,
+      "balance_due_inr": balance_inr,
+      "advance_percent": advance_percent() if payload.payment_kind == "advance" else 100,
+      "payment_kind": payload.payment_kind,
+    }
+
   mongo_service.ensure_ready()
   booking = mongo_service.find_booking_by_id(bid)
   if not booking:
@@ -546,11 +694,11 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
       status_code=400,
       detail="this trip has no catalogue price; online advance is not available",
     )
-  advance_inr, balance_inr = compute_advance_inr(package_total)
-  amount_paise = max(MIN_AMOUNT_PAISE, advance_inr * 100)
+  advance_inr, balance_inr, amount_paise = _payment_amounts_for_kind(package_total, payload.payment_kind)
   logger.info(
-    "create-order pricing booking=%s package_total_inr=%s advance_inr=%s amount_paise=%s people=%s",
+    "create-order pricing booking=%s kind=%s package_total_inr=%s pay_now_inr=%s amount_paise=%s people=%s",
     bid,
+    payload.payment_kind,
     package_total,
     advance_inr,
     amount_paise,
@@ -560,7 +708,7 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
     order = razorpay_create_order(
       amount_paise,
       receipt=payload.booking_id,
-      notes={"booking_id": payload.booking_id},
+      notes={"booking_id": payload.booking_id, "payment_kind": payload.payment_kind},
     )
   except RazorpayAuthError as error:
     logger.error("create-order RazorpayAuthError booking=%s: %s", bid, error)
@@ -597,6 +745,7 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
     advance_inr,
     amount_paise,
     RAZORPAY_KEY_ID,
+    payment_kind=payload.payment_kind,
   ):
     logger.error("create-order mongo attach failed booking=%s order=%s", bid, order_id)
     raise HTTPException(status_code=400, detail="could not attach payment order to booking")
@@ -616,11 +765,12 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
     "package_total_inr": package_total,
     "advance_payment_inr": advance_inr,
     "balance_due_inr": balance_inr,
-    "advance_percent": advance_percent(),
+    "advance_percent": advance_percent() if payload.payment_kind == "advance" else 100,
+    "payment_kind": payload.payment_kind,
   }
 
 
-# Standard Checkout aliases (https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/)
+# Standard Checkout aliases
 @app.post("/api/create-order")
 def api_create_order_alias(payload: RazorpayCreateOrderRequest):
   """Create Razorpay order for a pending booking (Wonder Baboon flow)."""
@@ -672,9 +822,12 @@ def _resolve_booking_for_razorpay_payment(
 def razorpay_verify_endpoint(payload: RazorpayVerifyRequest):
   order_id = payload.razorpay_order_id.strip()
   payment_id = payload.razorpay_payment_id.strip()
+  pending_token = (payload.pending_token or "").strip()
+  bid = (payload.booking_id or "").strip()
   logger.info(
-    "verify-payment start client_booking=%s order=%s payment=%s sig_len=%s",
-    payload.booking_id,
+    "verify-payment start client_booking=%s pending=%s order=%s payment=%s sig_len=%s",
+    bid or "—",
+    bool(pending_token),
     order_id,
     payment_id,
     len(payload.razorpay_signature or ""),
@@ -682,13 +835,57 @@ def razorpay_verify_endpoint(payload: RazorpayVerifyRequest):
   if not razorpay_enabled():
     logger.warning("verify-payment rejected: razorpay not configured")
     raise HTTPException(status_code=503, detail="online advance payment is not configured")
+
+  if pending_token:
+    if not verify_payment_signature(
+      order_id,
+      payload.razorpay_payment_id,
+      payload.razorpay_signature,
+    ):
+      logger.warning(
+        "razorpay signature verify failed pending order=%s payment=%s",
+        order_id,
+        payload.razorpay_payment_id,
+      )
+      raise HTTPException(
+        status_code=400,
+        detail="payment verification failed — contact Wonder Baboon with your payment reference",
+      )
+    doc = decode_pending_booking_token(pending_token)
+    mongo_service.ensure_ready()
+    package_total = mongo_service.package_total_inr_for_booking(doc, None)
+    if package_total is None:
+      raise HTTPException(status_code=400, detail="could not determine package total")
+    advance_inr, _balance_inr, amount_paise = _payment_amounts_for_kind(package_total, payload.payment_kind)
+    doc["confirmed"] = False
+    doc["requiresOnlineAdvance"] = True
+    doc["razorpayOrderId"] = order_id
+    doc["razorpayKeyId"] = (RAZORPAY_KEY_ID or "").strip()
+    doc["razorpayPackageTotalInr"] = int(package_total)
+    doc["razorpayAdvanceInr"] = int(advance_inr)
+    doc["razorpayAmountPaise"] = int(amount_paise)
+    doc["razorpayPaymentKind"] = payload.payment_kind
+    doc["razorpayPaymentId"] = payment_id
+    booking_id = mongo_service.insert_booking(doc)
+    mongo_service.set_booking_razorpay_payment_refs(booking_id, payment_id)
+    result = _admin_confirm_booking_payment(booking_id, advance_inr, None)
+    result["booking_id"] = booking_id
+    logger.info(
+      "verify-payment ok pending saved booking=%s order=%s payment=%s payment_status=%s",
+      booking_id,
+      order_id,
+      payment_id,
+      result.get("payment"),
+    )
+    return result
+
   mongo_service.ensure_ready()
   try:
-    booking, booking_id = _resolve_booking_for_razorpay_payment(payload.booking_id, order_id)
+    booking, booking_id = _resolve_booking_for_razorpay_payment(bid, order_id)
   except HTTPException as exc:
     logger.warning(
       "verify-payment resolve failed client_booking=%s order=%s status=%s detail=%s",
-      payload.booking_id,
+      bid,
       order_id,
       exc.status_code,
       exc.detail,
@@ -730,11 +927,12 @@ def razorpay_verify_endpoint(payload: RazorpayVerifyRequest):
       detail="payment verification failed — contact Wonder Baboon with your payment reference",
     )
   advance_inr = int(booking.get("razorpayAdvanceInr") or 0)
+  payment_kind = str(booking.get("razorpayPaymentKind") or payload.payment_kind or "advance")
   if advance_inr < 1:
     package_total = mongo_service.package_total_inr_for_booking(booking, None)
     if package_total is None:
       raise HTTPException(status_code=400, detail="could not determine package total")
-    advance_inr, _ = compute_advance_inr(package_total)
+    advance_inr, _, _ = _payment_amounts_for_kind(package_total, payment_kind)
   mongo_service.set_booking_razorpay_payment_refs(booking_id, payment_id)
   result = _admin_confirm_booking_payment(booking_id, advance_inr, None)
   logger.info(
@@ -771,9 +969,8 @@ def guest_booking(payload: GuestBookingRequest):
     "createdAt": datetime.utcnow(),
     **tfields,
   }
-  booking_id = _save_catalogue_booking(doc)
   logger.info("guest booking trip=%s email=%s", payload.travel_destination, payload.email)
-  return _booking_response(booking_id)
+  return _save_catalogue_booking(doc)
 
 
 @app.post("/api/bookings/user")
@@ -842,7 +1039,6 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
     "createdAt": datetime.utcnow(),
     **tfields,
   }
-  booking_id = _save_catalogue_booking(doc)
   logger.info(
     "user booking trip=%s email=%s date=%s people=%s",
     trip.get("title"),
@@ -850,7 +1046,7 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
     date_of_travel,
     people,
   )
-  return _booking_response(booking_id)
+  return _save_catalogue_booking(doc)
 
 
 @app.get("/api/user/profile")

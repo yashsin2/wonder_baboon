@@ -1,4 +1,4 @@
-import { API_BASE_URL, logger, parseError, showSuccessModal } from "./config.js";
+import { API_BASE_URL, logger, mountWbModal, parseError, showSuccessModal } from "./config.js";
 
 function payLog(level: "info" | "warn" | "error", step: string, detail?: unknown): void {
   const msg = detail !== undefined ? `[wb-pay] ${step}` : `[wb-pay] ${step}`;
@@ -36,6 +36,8 @@ export interface RazorpayPayResult {
 export interface BookingSavedPayload {
   message?: string;
   booking_id?: string;
+  pending_token?: string;
+  saved_to_database?: boolean;
   razorpay_enabled?: boolean;
   advance_percent?: number;
   advance_refund_days?: number;
@@ -61,12 +63,20 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+export type PaymentKind = "advance" | "full";
+
 export type PaymentResumeContext = {
-  bookingId: string;
+  bookingId?: string;
+  pendingToken?: string;
+  paymentKind?: PaymentKind;
   contact: { name?: string; email?: string; mobile?: string };
   tripTitle: string;
   travelDate: string;
 };
+
+function hasPaymentResumeRef(resume?: PaymentResumeContext): boolean {
+  return !!(resume?.bookingId?.trim() || resume?.pendingToken?.trim());
+}
 
 /** Centered modal for payment incomplete / failed (not a full-width red toast). */
 export function showPaymentIncompleteModal(
@@ -102,13 +112,12 @@ export function showPaymentIncompleteModal(
         <li>${escapeHtml(advanceRefundPolicyText(refundDays))}</li>
       </ul>
       <div class="wb-modal-actions">
-        ${options?.resume?.bookingId ? `<button type="button" class="wb-primary" id="wbPayAlertRetry">Retry payment</button>` : ""}
-        <button type="button" class="${options?.resume?.bookingId ? "wb-cancel" : "wb-primary"}" id="wbPayAlertOk">Got it</button>
+        ${hasPaymentResumeRef(options?.resume) ? `<button type="button" class="wb-primary" id="wbPayAlertRetry">Retry payment</button>` : ""}
+        <button type="button" class="${hasPaymentResumeRef(options?.resume) ? "wb-cancel" : "wb-primary"}" id="wbPayAlertOk">Got it</button>
       </div>
     </div>
   `;
-  document.body.appendChild(wrap);
-  const close = (): void => wrap.remove();
+  const close = mountWbModal(wrap);
   wrap.querySelector(".wb-pay-alert-close")?.addEventListener("click", close);
   wrap.querySelector("#wbPayAlertOk")?.addEventListener("click", close);
   wrap.addEventListener("click", (event) => {
@@ -116,19 +125,28 @@ export function showPaymentIncompleteModal(
   });
   const resume = options?.resume;
   wrap.querySelector("#wbPayAlertRetry")?.addEventListener("click", () => {
-    if (!resume?.bookingId) return;
+    if (!hasPaymentResumeRef(resume)) return;
     close();
     void (async () => {
       try {
+        const saved: BookingSavedPayload = resume?.pendingToken
+          ? {
+              pending_token: resume.pendingToken,
+              razorpay_enabled: true,
+              advance_refund_days: refundDays,
+            }
+          : {
+              booking_id: resume?.bookingId,
+              razorpay_enabled: true,
+              advance_refund_days: refundDays,
+            };
         const { message } = await completeBookingWithOptionalRazorpay(
-          {
-            booking_id: resume.bookingId,
-            razorpay_enabled: true,
-            advance_refund_days: refundDays,
-          },
-          resume.contact,
-          resume.tripTitle,
-          resume.travelDate
+          saved,
+          resume!.contact,
+          resume!.tripTitle,
+          resume!.travelDate,
+          undefined,
+          resume?.paymentKind || "advance",
         );
         showSuccessModal("Booking confirmed", message);
       } catch (err) {
@@ -198,13 +216,26 @@ export type BookingPaymentHooks = {
   onCheckoutOpen?: () => void;
 };
 
+export type BookingPaymentRef = { bookingId?: string; pendingToken?: string; paymentKind?: PaymentKind };
+
+function paymentRefBody(ref: BookingPaymentRef): Record<string, string> {
+  const pending = (ref.pendingToken || "").trim();
+  const bookingId = (ref.bookingId || "").trim();
+  const kind = ref.paymentKind || "advance";
+  if (pending) return { pending_token: pending, payment_kind: kind };
+  return { booking_id: bookingId, payment_kind: kind };
+}
+
 export async function payAdvanceForBooking(
-  bookingId: string,
+  ref: BookingPaymentRef,
   contact: { name?: string; email?: string; mobile?: string },
   hooks?: BookingPaymentHooks
 ): Promise<RazorpayPayResult> {
+  const pendingToken = (ref.pendingToken || "").trim();
+  const bookingId = (ref.bookingId || "").trim();
   payLog("info", "payAdvance start", {
-    bookingId,
+    bookingId: bookingId || undefined,
+    pendingToken: pendingToken ? "[present]" : undefined,
     api: API_BASE_URL,
     host: window.location.hostname,
   });
@@ -213,7 +244,7 @@ export async function payAdvanceForBooking(
   const orderRes = await fetch(`${API_BASE_URL}/create-order`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ booking_id: bookingId }),
+    body: JSON.stringify(paymentRefBody(ref)),
   });
   if (!orderRes.ok) {
     const detail = await parseError(orderRes);
@@ -232,6 +263,7 @@ export async function payAdvanceForBooking(
     balance_due_inr: number;
     package_total_inr: number;
     advance_percent: number;
+    payment_kind?: PaymentKind;
   };
 
   const amountPaise = Number(order.amount ?? order.amount_paise ?? 0);
@@ -292,7 +324,7 @@ export async function payAdvanceForBooking(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          booking_id: bookingId,
+          ...paymentRefBody(ref),
           razorpay_order_id: response.razorpay_order_id,
           razorpay_payment_id: response.razorpay_payment_id,
           razorpay_signature: response.razorpay_signature,
@@ -313,7 +345,10 @@ export async function payAdvanceForBooking(
       amount: amountPaise,
       currency,
       name: "Wonder Baboon",
-      description: `${order.advance_percent}% trip advance`,
+      description:
+        order.payment_kind === "full"
+          ? "Full trip payment"
+          : `${order.advance_percent}% trip advance`,
       order_id: order.order_id,
       prefill: {
         name: contact.name || "",
@@ -421,7 +456,7 @@ export function handlePaymentFlowError(
   showPaymentIncompleteModal(refundDays, {
     cancelled: cancelled && !providerSetup && !paymentFailed && !verifyFailed,
     providerError,
-    resume: resume?.bookingId ? resume : undefined,
+    resume: resume && hasPaymentResumeRef(resume) ? resume : undefined,
   });
 }
 
@@ -430,24 +465,39 @@ export async function completeBookingWithOptionalRazorpay(
   contact: { name?: string; email?: string; mobile?: string },
   tripTitle: string,
   travelDate: string,
-  hooks?: BookingPaymentHooks
+  hooks?: BookingPaymentHooks,
+  paymentKind: PaymentKind = "advance",
 ): Promise<{ paidAdvance: boolean; message: string }> {
+  const pendingToken = (saved.pending_token || "").trim();
   const bookingId = (saved.booking_id || "").trim();
   const refundDays = saved.advance_refund_days ?? 12;
 
-  if (!bookingId || !saved.razorpay_enabled) {
+  if ((!pendingToken && !bookingId) || !saved.razorpay_enabled) {
     return {
       paidAdvance: false,
       message: `Your booking for ${tripTitle} on ${travelDate} is in. Our team will reach out shortly.`,
     };
   }
 
-  const result = await payAdvanceForBooking(bookingId, contact, hooks);
-  const advance = Number(result.advance_payment_inr ?? 0);
+  const result = await payAdvanceForBooking(
+    pendingToken ? { pendingToken, paymentKind } : { bookingId, paymentKind },
+    contact,
+    hooks,
+  );
+  const paid = Number(result.advance_payment_inr ?? 0);
   const balance = Number(result.balance_due_inr ?? 0);
+  const total = Number(result.package_total_inr ?? 0);
   document.getElementById("wbPayAlertModal")?.remove();
+
+  if (paymentKind === "full" || result.payment === "paid") {
+    return {
+      paidAdvance: true,
+      message: `Your seat is confirmed. Full payment of ₹${(total || paid).toLocaleString("en-IN")} received for ${tripTitle}.`,
+    };
+  }
+
   return {
     paidAdvance: true,
-    message: `Your seat is confirmed. Advance of ₹${advance.toLocaleString("en-IN")} received for ${tripTitle}. Balance due: ₹${balance.toLocaleString("en-IN")} before the trip. ${advanceRefundPolicyText(refundDays)}`,
+    message: `Your seat is confirmed. Advance of ₹${paid.toLocaleString("en-IN")} received for ${tripTitle}. Balance due: ₹${balance.toLocaleString("en-IN")} before the trip. ${advanceRefundPolicyText(refundDays)}`,
   };
 }

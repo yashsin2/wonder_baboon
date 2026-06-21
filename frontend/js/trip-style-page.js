@@ -1,6 +1,7 @@
-import { API_BASE_URL, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
+import { API_BASE_URL, createWbModal, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
-import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js";
+import { bookingModalActionsHtml, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js";
+import { fetchRazorpayConfig } from "./razorpay-checkout.js";
 import { normalizeTripStyle, renderStyleIntroHtml, TRIP_STYLE_ORDER, TRIP_STYLES, tripStyleSlugFromPath, } from "./trip-styles.js";
 const styleSlug = document.body.dataset.tripStyle ||
     tripStyleSlugFromPath(window.location.pathname) ||
@@ -31,32 +32,6 @@ function formatTripDateRange(start, end) {
         return `${ordinal(sd.getDate())} to ${ordinal(ed.getDate())} ${monthShort(sd)}`;
     }
     return `${ordinal(sd.getDate())} ${monthShort(sd)} to ${ordinal(ed.getDate())} ${monthShort(ed)}`;
-}
-function createWbModal(title, bodyHtml, options) {
-    const modal = document.createElement("div");
-    modal.className = "wb-modal";
-    const cardClass = [
-        "wb-modal-card",
-        options?.wide ? "wb-modal-card--wide" : "",
-        options?.tall ? "wb-modal-card--tall" : "",
-    ]
-        .filter(Boolean)
-        .join(" ");
-    modal.innerHTML = `
-    <div class="${cardClass}">
-      <div class="wb-modal-head">
-        <h3>${title}</h3>
-        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
-      </div>
-      ${bodyHtml}
-    </div>`;
-    document.body.appendChild(modal);
-    modal.querySelector(".wb-modal-close")?.addEventListener("click", () => modal.remove());
-    modal.addEventListener("click", (event) => {
-        if (event.target === modal)
-            modal.remove();
-    });
-    return modal;
 }
 function openItineraryModal(trip) {
     const html = getItineraryHtmlForTrip(trip);
@@ -103,15 +78,7 @@ function openBookingModal(trip) {
     const isLoggedIn = !!(token && user?.role === "user");
     const defaultDate = trip.startDate || todayIso();
     const minDate = todayIso();
-    const guestFields = isLoggedIn
-        ? ""
-        : `
-      <label>Full name *</label>
-      <input id="bk_name" type="text" required minlength="2" />
-      <label>Mobile *</label>
-      <input id="bk_mobile" type="tel" required placeholder="10-digit Indian number" />
-      <label>Email</label>
-      <input id="bk_email" type="email" />`;
+    const guestFields = isLoggedIn ? "" : guestBookingFieldsHtml();
     const body = `
     <p class="muted">${trip.title} · ${trip.location} · ${trip.durationLabel}</p>
     <form id="bk_form" novalidate>
@@ -122,27 +89,11 @@ function openBookingModal(trip) {
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
       <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
       <p class="bk-pay-note muted" id="bk_pay_note" hidden></p>
-      <div class="wb-modal-actions">
-        <button type="button" class="wb-cancel" id="bk_cancel">Cancel</button>
-        <button type="submit" class="wb-primary" id="bk_submit">Confirm booking</button>
-      </div>
+      ${bookingModalActionsHtml()}
     </form>`;
     const modal = createWbModal(`Book: ${escapeHtml(trip.title)}`, body);
-    let paySubmitLabel = "Confirm booking";
-    void fetchRazorpayConfig().then((cfg) => {
-        if (!cfg.enabled)
-            return;
-        const note = modal.querySelector("#bk_pay_note");
-        const submit = modal.querySelector("#bk_submit");
-        if (note) {
-            note.hidden = false;
-            note.textContent = bookingAdvanceNoticeText(cfg.advance_percent, cfg.advance_refund_days ?? 12);
-        }
-        if (submit) {
-            paySubmitLabel = `Book & pay ${cfg.advance_percent}% advance`;
-            submit.textContent = paySubmitLabel;
-        }
-    });
+    if (!isLoggedIn)
+        wireBookingMobileField(modal);
     const extrasWrap = modal.querySelector("#bk_extras_wrap");
     const peopleEl = modal.querySelector("#bk_people");
     const syncBookingExtras = () => {
@@ -163,8 +114,7 @@ function openBookingModal(trip) {
     syncBookingExtras();
     peopleEl?.addEventListener("input", syncBookingExtras);
     modal.querySelector("#bk_cancel")?.addEventListener("click", () => modal.remove());
-    modal.querySelector("#bk_form")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
+    const runPay = (paymentKind) => {
         const date = modal.querySelector("#bk_date").value;
         const people = Number(modal.querySelector("#bk_people").value);
         const needExtras = Math.max(0, Math.min(19, people - 1));
@@ -173,99 +123,45 @@ function openBookingModal(trip) {
             showMessagePopup("Please fill every additional traveler's name.", "error");
             return;
         }
-        const submitBtn = modal.querySelector("#bk_submit");
-        const resetSubmitBtn = () => {
-            if (!submitBtn?.isConnected)
-                return;
-            submitBtn.disabled = false;
-            submitBtn.textContent = paySubmitLabel;
+        if (!isLoggedIn && !validateGuestBookingFields(modal).ok)
+            return;
+        const payAdvance = modal.querySelector("#bk_pay_advance");
+        const payFull = modal.querySelector("#bk_pay_full");
+        const setBusy = (label) => {
+            if (payAdvance)
+                payAdvance.disabled = true;
+            if (payFull)
+                payFull.disabled = true;
+            if (paymentKind === "full" && payFull)
+                payFull.textContent = label;
+            else if (payAdvance)
+                payAdvance.textContent = label;
         };
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Booking…";
-        }
-        try {
-            let saved = {};
-            let contact = {};
-            if (isLoggedIn) {
-                const res = await fetch(`${API_BASE_URL}/bookings/user`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({
-                        trip_id: trip._id,
-                        date_of_travel: date,
-                        number_of_people: people,
-                        additional_travelers: extraNames,
-                    }),
-                });
-                if (!res.ok)
-                    throw new Error(await parseError(res));
-                saved = await res.json();
-                contact = { name: user?.name, email: user?.email, mobile: user?.mobile };
-            }
-            else {
-                const name = modal.querySelector("#bk_name").value.trim();
-                const mobile = modal.querySelector("#bk_mobile").value.trim();
-                const email = modal.querySelector("#bk_email").value.trim();
-                if (!name || !mobile) {
-                    showMessagePopup("Name and mobile are required", "error");
-                    resetSubmitBtn();
-                    return;
+        const setIdle = () => {
+            if (!modal.isConnected)
+                return;
+            void fetchRazorpayConfig().then((cfg) => {
+                if (payAdvance) {
+                    payAdvance.disabled = !cfg.enabled;
+                    payAdvance.textContent = `Pay ${cfg.advance_percent}% advance`;
                 }
-                const res = await fetch(`${API_BASE_URL}/bookings/guest`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        trip_id: trip._id,
-                        travel_destination: trip.title,
-                        date_of_travel: date,
-                        full_name: name,
-                        mobile,
-                        email: email || null,
-                        number_of_people: people,
-                        additional_travelers: extraNames,
-                    }),
-                });
-                if (!res.ok)
-                    throw new Error(await parseError(res));
-                saved = await res.json();
-                contact = { name, email: email || undefined, mobile };
-            }
-            const refundDays = saved.advance_refund_days ?? 12;
-            if (saved.razorpay_enabled) {
-                if (submitBtn)
-                    submitBtn.textContent = "Opening payment…";
-                try {
-                    const { message } = await completeBookingWithOptionalRazorpay(saved, contact, trip.title, date);
-                    modal.remove();
-                    showSuccessModal("Booking confirmed", message);
+                if (payFull) {
+                    payFull.disabled = !cfg.enabled;
+                    payFull.textContent = "Pay full amount";
                 }
-                catch (payError) {
-                    modal.remove();
-                    const bookingId = (saved.booking_id || "").trim();
-                    handlePaymentFlowError(payError, refundDays, bookingId
-                        ? {
-                            bookingId,
-                            contact,
-                            tripTitle: trip.title,
-                            travelDate: date,
-                        }
-                        : undefined);
-                    logger.warn("advance payment not completed", payError);
-                }
-            }
-            else {
-                modal.remove();
-                showSuccessModal("Booking received", `Your booking for ${trip.title} on ${date} is in. Our team will reach out shortly.`);
-            }
-        }
-        catch (error) {
-            showMessagePopup(error instanceof Error ? error.message : "Booking failed", "error");
-        }
-        finally {
-            resetSubmitBtn();
-        }
-    });
+            });
+        };
+        void submitBookingAndPay(modal, trip, paymentKind, {
+            date,
+            people,
+            extraNames,
+            isLoggedIn,
+            token,
+            onBusy: setBusy,
+            onIdle: setIdle,
+        });
+    };
+    setupBookingPaymentUi(modal, runPay);
 }
 function renderTripCard(trip) {
     return `

@@ -25,14 +25,14 @@
   <link rel="icon" href="https://wonderbaboon.com/wb-favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="https://wonderbaboon.com/wb-apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="stylesheet" href="/styles.css?v=20250604">
+  <link rel="stylesheet" href="/styles.css?v=20250621">
   <link rel="stylesheet" href="/previous-adventures.css?v=20250604">
   <!-- Swiper CSS -->
 <link
 rel="stylesheet"
 href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 />
-<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Gloria+Hallelujah&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Gloria+Hallelujah&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&display=swap" rel="stylesheet">
 
 <script type="application/ld+json">
 {
@@ -64,7 +64,12 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
     </a>
 
     <nav class="nav-links" data-smooth-scroll>
-      <a href="#trips">Upcoming Trips</a>
+      <div class="nav-dropdown" id="navTripsDropdown">
+        <a href="#" class="nav-dropdown-trigger" role="button" aria-haspopup="true" aria-expanded="false">Upcoming Trips <svg class="nav-dropdown-arrow" viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+        <div class="nav-dropdown-menu" id="navTripsMenu" role="menu" aria-label="Browse trips by state">
+          <div class="nav-dropdown-loading">Loading trips…</div>
+        </div>
+      </div>
       <a href="/previous-adventures">Travel Gallery</a>
       <a href="#about">About Us</a>
       <a href="#travel-style">Travel Styles</a>
@@ -138,13 +143,41 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 
 
 
-        <!-- Hero Section -->
-        <div class="hero">
+        <!-- Hero Section — cinematic Ken Burns slideshow -->
+        <section class="hero hero-cinematic" id="hero">
+            <div class="hero-slideshow" aria-hidden="true">
+                <div class="hero-slide is-active" style="background-image:url('./assets/lake.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('./assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('./assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('./assets/nature-photographer-29ezCWtMtnM-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('./assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('./assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg')"></div>
+            </div>
+
+            <div class="hero-scrim" aria-hidden="true"></div>
+            <div class="hero-vignette" aria-hidden="true"></div>
+            <div class="hero-letterbox hero-letterbox--bottom" aria-hidden="true"></div>
+
             <div class="hero-content">
-                <h1>Trips from just ₹999 per day</h1>
-                <br>
-                <br>
-                <a href="#tours" class="cta-btn">Let's Go</a>
+                <span class="hero-kicker">Wonder Baboon</span>
+                <h1 class="hero-headline">
+                    <span class="hero-word hero-word--travel">Travel</span>
+                    <span class="hero-word hero-word--flip">
+                        <span class="hero-flipper" aria-live="polite">
+                            <span class="hero-flipper-ghost" aria-hidden="true">with&nbsp;us</span>
+                            <span class="hero-flipper-track">
+                                <span class="hero-flipper-item hero-flipper-item--with"><span class="hero-flipper-text">with&nbsp;us</span></span>
+                                <span class="hero-flipper-item hero-flipper-item--without"><span class="hero-flipper-text">Or&nbsp;without&nbsp;us</span></span>
+                            </span>
+                            <span class="hero-flipper-sr">. Travel with us, or without us.</span>
+                        </span>
+                    </span>
+                </h1>
+                <p class="hero-motto">just <em>travel.</em></p>
+                <div class="hero-actions">
+                    <a href="#trips" class="cta-btn">Let's Go</a>
+                    <a href="/previous-adventures" class="cta-ghost">Watch our journeys <span aria-hidden="true">→</span></a>
+                </div>
             </div>
 
             <div class="search-box wb-search wb-search--hero">
@@ -166,7 +199,12 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
                 <button id="planTripBtn" type="button" class="wb-search-submit">Search trips</button>
                 <div class="wb-select-backdrop" id="heroSelectBackdrop" hidden aria-hidden="true"></div>
             </div>
-        </div>
+
+            <a href="#trips" class="hero-scroll" aria-label="Scroll to upcoming trips">
+                <span class="hero-scroll-label">Scroll</span>
+                <span class="hero-scroll-line" aria-hidden="true"></span>
+            </a>
+        </section>
 
 <!-- Storybook landscape divider between hero and Upcoming Trips -->
 <div class="boundary-scene" aria-hidden="true">
@@ -177,10 +215,22 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
   <h2 class="section-title">✨ Upcoming Trips ✨</h2>
   <p class="section-subtitle">Filter by vibe — tap a style to show matching trips below</p>
   <div class="trip-style-chips" role="group" aria-label="Filter trips by travel style">
-    <button type="button" class="trip-style-chip active" data-style-chip="backpackers" aria-pressed="true">The Backpackers</button>
+    <button type="button" class="trip-style-chip active" data-style-chip="all" aria-pressed="true">All</button>
+    <button type="button" class="trip-style-chip" data-style-chip="backpackers" aria-pressed="false">The Backpackers</button>
     <button type="button" class="trip-style-chip" data-style-chip="motorcycle_diaries" aria-pressed="false">Motorcycle Diaries</button>
     <button type="button" class="trip-style-chip" data-style-chip="dolce_far_niente" aria-pressed="false">Dolce far niente</button>
     <button type="button" class="trip-style-chip" data-style-chip="hikers" aria-pressed="false">The Hikers</button>
+  </div>
+  <div class="trips-toolbar" aria-label="Trip results toolbar">
+    <span class="trips-count" id="tripsCount" aria-live="polite">Loading trips…</span>
+    <label class="trips-sort">
+      <span class="trips-sort-label">Sort:</span>
+      <select id="tripsSort" class="trips-sort-select" aria-label="Sort trips">
+        <option value="earliest">Earliest</option>
+        <option value="cheapest">Cheapest</option>
+        <option value="shortest">Shortest</option>
+      </select>
+    </label>
   </div>
   <div class="trips-carousel">
     <div class="swiper tripsSwiper">

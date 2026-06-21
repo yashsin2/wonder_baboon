@@ -473,6 +473,42 @@ class MongoService:
       return None
     return self.find_booking_by_id(raw)
 
+  def list_paid_bookings_pending_completion_email(self) -> List[dict]:
+    """Fully paid bookings that have not yet received a trip-completed email."""
+    query: Dict[str, Any] = {
+      "payment": "paid",
+      "$or": [
+        {"completionEmailSentAt": {"$exists": False}},
+        {"completionEmailSentAt": None},
+      ],
+    }
+    return list(self.user_trip_collection.find(query))
+
+  def mark_completion_email_sent(self, booking_id: str) -> bool:
+    raw = (booking_id or "").strip()
+    if not raw:
+      return False
+    id_clauses: List[Dict[str, Any]] = [{"_id": raw}]
+    try:
+      id_clauses.insert(0, {"_id": ObjectId(raw)})
+    except Exception:
+      pass
+    result = self.user_trip_collection.update_one(
+      {
+        "$and": [
+          {"$or": id_clauses},
+          {
+            "$or": [
+              {"completionEmailSentAt": {"$exists": False}},
+              {"completionEmailSentAt": None},
+            ]
+          },
+        ]
+      },
+      {"$set": {"completionEmailSentAt": datetime.utcnow()}},
+    )
+    return result.matched_count > 0
+
   def set_booking_payment_paid(self, booking_id: str) -> bool:
     """Legacy: marks paid without payment breakdown (prefer confirm_booking_with_payment_breakdown)."""
     raw = (booking_id or "").strip()

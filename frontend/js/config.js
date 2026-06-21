@@ -118,6 +118,83 @@ export function attachSmoothScroll(scope = document) {
         });
     });
 }
+let modalScrollLockCount = 0;
+let modalSavedScrollY = 0;
+function lockPageScroll() {
+    modalScrollLockCount += 1;
+    if (modalScrollLockCount > 1)
+        return;
+    modalSavedScrollY = window.scrollY;
+    document.documentElement.classList.add("wb-scroll-locked");
+    document.body.classList.add("wb-scroll-locked");
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${modalSavedScrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+}
+function unlockPageScroll() {
+    modalScrollLockCount = Math.max(0, modalScrollLockCount - 1);
+    if (modalScrollLockCount > 0)
+        return;
+    document.documentElement.classList.remove("wb-scroll-locked");
+    document.body.classList.remove("wb-scroll-locked");
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.left = "";
+    document.body.style.right = "";
+    document.body.style.width = "";
+    window.scrollTo(0, modalSavedScrollY);
+}
+/** Mount a modal overlay; locks page scroll until the node is removed from the DOM. */
+export function mountWbModal(modal) {
+    lockPageScroll();
+    document.body.appendChild(modal);
+    let closed = false;
+    const close = () => {
+        if (closed)
+            return;
+        closed = true;
+        modal.remove();
+        unlockPageScroll();
+    };
+    const observer = new MutationObserver(() => {
+        if (!document.body.contains(modal) && !closed) {
+            closed = true;
+            observer.disconnect();
+            unlockPageScroll();
+        }
+    });
+    observer.observe(document.body, { childList: true });
+    return close;
+}
+export function createWbModal(title, bodyHtml, options) {
+    const modal = document.createElement("div");
+    modal.className = "wb-modal";
+    const cardClass = [
+        "wb-modal-card",
+        options?.wide ? "wb-modal-card--wide" : "",
+        options?.tall ? "wb-modal-card--tall" : "",
+    ]
+        .filter(Boolean)
+        .join(" ");
+    modal.innerHTML = `
+    <div class="${cardClass}">
+      <div class="wb-modal-head">
+        <h3>${title}</h3>
+        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
+      </div>
+      ${bodyHtml}
+    </div>
+  `;
+    const close = mountWbModal(modal);
+    modal.querySelector(".wb-modal-close")?.addEventListener("click", close);
+    modal.addEventListener("click", (event) => {
+        if (event.target === modal)
+            close();
+    });
+    return modal;
+}
 export function showMessagePopup(message, type = "success") {
     const el = document.createElement("div");
     el.className = `notification ${type} show`;
@@ -153,8 +230,7 @@ export function showSuccessModal(title, message, ctaLabel = "Great!") {
       </div>
     </div>
   `;
-    document.body.appendChild(wrap);
-    const close = () => wrap.remove();
+    const close = mountWbModal(wrap);
     wrap.querySelector("#wbSuccessOk")?.addEventListener("click", close);
     wrap.addEventListener("click", (event) => {
         if (event.target === wrap)
@@ -195,7 +271,19 @@ export async function parseError(response, data) {
             if (typeof item === "string")
                 return item;
             if (item && typeof item === "object" && "msg" in item) {
-                return String(item.msg || "Invalid input");
+                const row = item;
+                const loc = Array.isArray(row.loc) ? row.loc.map(String).join(".") : "";
+                const msg = String(row.msg || "");
+                if (loc.includes("mobile") || /mobile number/i.test(msg)) {
+                    return "Please enter a valid mobile number";
+                }
+                if (loc.includes("email") || /valid email/i.test(msg)) {
+                    return "Please enter a valid email address";
+                }
+                if (row.type === "string_too_short" && loc.includes("mobile")) {
+                    return "Please enter a valid mobile number";
+                }
+                return msg || "Invalid input";
             }
             return "Invalid input";
         });

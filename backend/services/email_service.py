@@ -380,6 +380,98 @@ def member_update_traveler_plain_text(
   )
 
 
+def trip_completed_traveler_html(
+  *,
+  full_name: str,
+  destination: str,
+  travel_window: str,
+  people_line: str,
+  package_total_inr: int,
+  booking_display_id: str,
+) -> str:
+  greeting = full_name.strip() if full_name else "Explorer"
+  accent = "#c4621a"
+  forest = "#1e3d2f"
+  sand = "#f4ede3"
+  return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width" />
+<title>Trip completed</title></head>
+<body style="margin:0;padding:0;background:#e8dfd0;font-family:'Segoe UI',Roboto,Georgia,ui-serif,sans-serif;color:#3d3428;">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:linear-gradient(160deg,#2d4a3a 0%,#c4621a 140%);padding:36px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:{sand};border-radius:14px;overflow:hidden;box-shadow:0 18px 45px rgba(30,61,47,0.35);border:2px solid #d4cbb8;">
+      <tr><td style="background:{forest};padding:26px 28px;color:#eef6f2;">
+        <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.38em;text-transform:uppercase;opacity:0.92;">Trail note</p>
+        <h1 style="margin:0;font-size:26px;line-height:1.15;font-weight:800;">Trip completed — Wonder Baboon</h1>
+        <p style="margin:12px 0 0;font-size:15px;opacity:0.95;">You made it back from {_safe(destination)}. Hope the stories are worth the blisters.</p>
+      </td></tr>
+      <tr><td style="padding:28px 26px;">
+        <p style="margin:0 0 18px;font-size:17px;line-height:1.5;">Namaste, {_safe(greeting)},</p>
+        <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:#4a4338;">
+          Your adventure to <strong>{_safe(destination)}</strong> ({_safe(travel_window)}) is officially in the books.
+          Thanks for travelling with us — fully paid, fully lived.
+        </p>
+        <div style="margin:22px 0;padding:18px 16px;background:#faf6ef;border-radius:10px;border:1px dashed {accent};">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="8" style="font-size:14px;color:#3d3428;">
+            <tr><td style="opacity:0.75;">📍 Escape</td><td style="font-weight:700;text-align:right;">{_safe(destination)}</td></tr>
+            <tr><td style="opacity:0.75;">📅 Dates</td><td style="font-weight:700;text-align:right;">{_safe(travel_window)}</td></tr>
+            <tr><td style="opacity:0.75;">🥾 Tribe size</td><td style="font-weight:700;text-align:right;">{_safe(people_line)}</td></tr>
+            <tr><td style="opacity:0.75;">📋 Reference</td><td style="font-family:monospace;text-align:right;">{_safe(booking_display_id)}</td></tr>
+          </table>
+        </div>
+        <h2 style="margin:24px 0 12px;font-size:14px;text-transform:uppercase;letter-spacing:0.2em;color:{forest};">Ledger on the ridge</h2>
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-radius:10px;overflow:hidden;border:1px solid #dce3d9;">
+          <tr style="background:{forest};color:#eef6f2;"><td colspan="2" style="padding:12px 16px;font-size:13px;font-weight:700;">Payment — all clear</td></tr>
+          <tr><td style="padding:14px 16px;border-bottom:1px solid #eae4d8;background:#ffffff;">Package total paid</td><td style="padding:14px 16px;border-bottom:1px solid #eae4d8;background:#ffffff;text-align:right;font-weight:800;color:{forest};">{_inr(package_total_inr)}</td></tr>
+          <tr><td style="padding:14px 16px;background:{sand};font-weight:800;">Status</td><td style="padding:14px 16px;background:{sand};text-align:right;font-weight:900;font-size:16px;color:#166534;">Trip completed ✓</td></tr>
+        </table>
+        <p style="margin:22px 0 0;font-size:13px;line-height:1.55;color:#5c5449;">
+          Got photos or feedback? Reply to this email — we'd love to hear how the trail treated you.
+        </p>
+        <p style="margin:20px 0 0;font-size:15px;line-height:1.5;color:#333;">
+          Trails &amp; high-fives,<br /><strong style="color:{forest};">Team Wonder Baboon</strong></p>
+      </td></tr>
+      <tr><td style="padding:14px 20px;background:#eadfce;font-size:11px;color:#6b6054;text-align:center;">
+        Until the next wander — carry light, tread kind.
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>"""
+
+
+def trip_completed_traveler_plain_text(
+  *,
+  full_name: str,
+  destination: str,
+  travel_window: str,
+  people_line: str,
+  package_total_inr: int,
+  booking_display_id: str,
+) -> str:
+  g = full_name.strip() if full_name else "Explorer"
+  return "\n".join(
+    [
+      "Trip completed — Wonder Baboon",
+      "",
+      f"Hi {g},",
+      "",
+      f"Your adventure to {destination} ({travel_window}) is officially complete.",
+      "Thanks for travelling with us — fully paid, fully lived.",
+      "",
+      f"Tribe size: {people_line}",
+      f"Reference: {booking_display_id}",
+      "",
+      "--- Payment ---",
+      f"Package total paid: {_inr(package_total_inr)}",
+      "Status: Trip completed",
+      "",
+      "Reply with photos or feedback anytime.",
+      "",
+      "Team Wonder Baboon",
+    ]
+  )
+
+
 def _traveler_roster_lines(booking: Dict[str, Any]) -> List[str]:
   names: List[str] = []
   if isinstance(booking.get("travelers"), list) and booking["travelers"]:
@@ -620,6 +712,48 @@ class EmailService:
     if not ok:
       logger.error("Traveler full-payment email failed: %s", err)
 
+  def notify_trip_completed_traveler(
+    self,
+    to: str,
+    booking: Dict[str, Any],
+    *,
+    package_total_inr: int,
+    travel_window: str,
+  ) -> Tuple[bool, Optional[str]]:
+    """Post-trip thank-you after full payment and trip end date has passed."""
+    dest = str(booking.get("travelDestination") or "Trip")
+    subject = f"Trip completed — {dest} | Wonder Baboon"
+
+    raw_id = booking.get("_id")
+    booking_display = str(raw_id).strip() if raw_id else "—"
+    raw_people = booking.get("numberOfPeople") or 1
+    try:
+      n_peep = max(1, int(raw_people))
+    except (TypeError, ValueError):
+      n_peep = 1
+    people_line = f"{n_peep} hikers" if n_peep != 1 else "1 hiker"
+
+    lead_name = str(booking.get("fullName") or "").strip()
+    if not lead_name:
+      trav = booking.get("travelers")
+      if isinstance(trav, list) and trav:
+        lead_name = str(trav[0] or "").strip()
+
+    kw = dict(
+      full_name=lead_name or "Explorer",
+      destination=dest,
+      travel_window=travel_window,
+      people_line=people_line,
+      package_total_inr=int(package_total_inr),
+      booking_display_id=booking_display,
+    )
+    html_body = trip_completed_traveler_html(**kw)
+    plain = trip_completed_traveler_plain_text(**kw)
+    ok, err = self.send_plain_and_html(to, subject, plain, html_body)
+    if not ok:
+      logger.error("Traveler trip-completed email failed: %s", err)
+    return ok, err
+
   def notify_booking_pending_traveler(
     self,
     to: str,
@@ -673,15 +807,17 @@ class EmailService:
     dest = str(doc.get("travelDestination") or "Trip")
     travel_date = str(doc.get("dateOfTravel") or "")
     if payment_pending:
-      subject = f"[Wonder Baboon] Booking started — advance payment pending — {dest} ({travel_date})"
-      headline = "Someone started a booking and opened advance payment (not confirmed until paid)."
+      subject = f"[Wonder Baboon] Booking attempt — pay advance to confirm — {dest} ({travel_date})"
+      headline = (
+        "Someone started a booking. Details are NOT saved until 30% advance payment succeeds."
+      )
     else:
       subject = f"[Wonder Baboon] New booking — {dest} ({travel_date})"
       headline = "A new booking was submitted on Wonder Baboon."
     lines = [
       headline,
       "",
-      f"Booking ID:     {str(doc.get('_id')) if doc.get('_id') is not None else '—'}",
+      f"Booking ID:     {str(doc.get('_id')) if doc.get('_id') is not None else 'Not saved yet (awaiting advance)'}",
       f"Trip type:      {doc.get('tripType')}",
       f"Trip ID:        {doc.get('tripId', '—')}",
       f"Destination:    {doc.get('travelDestination')}",

@@ -3,12 +3,29 @@ import hmac
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import Header, HTTPException
 from jose import JWTError, jwt
 
-from config import JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_SECRET
+from config import JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_SECRET, PENDING_BOOKING_EXPIRE_HOURS
+
+PENDING_BOOKING_TOKEN_TYPE = "pending_booking"
+
+
+def normalize_indian_mobile(value: str) -> str:
+  """Accept +91 / leading 0; store as 10-digit Indian mobile (6–9 start)."""
+  raw = str(value or "").strip()
+  if not raw:
+    raise ValueError("please enter a valid mobile number")
+  digits = re.sub(r"\D", "", raw)
+  if digits.startswith("91") and len(digits) >= 12:
+    digits = digits[2:]
+  if len(digits) == 11 and digits.startswith("0"):
+    digits = digits[1:]
+  if not re.fullmatch(r"^[6-9]\d{9}$", digits):
+    raise ValueError("please enter a valid mobile number")
+  return digits
 
 
 def sanitize_text(value: str, field: str = "value") -> str:
@@ -57,3 +74,48 @@ def require_admin(authorization: Optional[str] = Header(default=None)) -> dict:
   if not payload or payload.get("role") != "admin":
     raise HTTPException(status_code=403, detail="Admin access required")
   return payload
+
+
+def _serialize_booking_doc_for_token(doc: Dict[str, Any]) -> Dict[str, Any]:
+  out = {k: v for k, v in doc.items() if k != "_id"}
+  created = out.get("createdAt")
+  if isinstance(created, datetime):
+    out["createdAt"] = created.replace(tzinfo=timezone.utc).isoformat()
+  return out
+
+
+def create_pending_booking_token(doc: Dict[str, Any]) -> str:
+  """Signed payload held client-side until Razorpay advance succeeds (no DB row yet)."""
+  exp = datetime.now(timezone.utc) + timedelta(hours=PENDING_BOOKING_EXPIRE_HOURS)
+  payload = {
+    "typ": PENDING_BOOKING_TOKEN_TYPE,
+    "doc": _serialize_booking_doc_for_token(doc),
+    "exp": exp,
+  }
+  return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_pending_booking_token(token: str) -> Dict[str, Any]:
+  cleaned = (token or "").strip()
+  if not cleaned:
+    raise HTTPException(status_code=400, detail="booking session is missing — please start again")
+  try:
+    payload = jwt.decode(cleaned, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+  except JWTError:
+    raise HTTPException(
+      status_code=400,
+      detail="booking session expired — please fill the form and try again",
+    ) from None
+  if payload.get("typ") != PENDING_BOOKING_TOKEN_TYPE:
+    raise HTTPException(status_code=400, detail="invalid booking session")
+  raw_doc = payload.get("doc")
+  if not isinstance(raw_doc, dict):
+    raise HTTPException(status_code=400, detail="invalid booking session")
+  doc = dict(raw_doc)
+  created = doc.get("createdAt")
+  if isinstance(created, str):
+    try:
+      doc["createdAt"] = datetime.fromisoformat(created.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+      doc["createdAt"] = datetime.utcnow()
+  return doc

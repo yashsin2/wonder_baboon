@@ -1,7 +1,8 @@
-import { API_BASE_URL, attachSmoothScroll, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
+import { API_BASE_URL, attachSmoothScroll, createWbModal, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
-import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js";
+import { bookingModalActionsHtml, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js";
 import { mountHomePreviousTravels } from "./home-previous-travels.js";
+import { fetchRazorpayConfig } from "./razorpay-checkout.js";
 import { TRIP_STYLE_ORDER } from "./trip-styles.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
@@ -12,6 +13,9 @@ const searchButton = document.querySelector("#headerTripSearchBtn");
 const planButton = document.getElementById("planTripBtn");
 const heroTravelStyleSelect = document.getElementById("heroTravelStyle");
 const heroTravelMonthSelect = document.getElementById("heroTravelMonth");
+const tripsCountEl = document.getElementById("tripsCount");
+const tripsSortSelect = document.getElementById("tripsSort");
+let tripSort = "earliest";
 const heroSelectBackdrop = document.getElementById("heroSelectBackdrop");
 const MOBILE_HERO_SELECT = window.matchMedia("(max-width: 768px)");
 const enhancedHeroSelects = new Map();
@@ -48,11 +52,13 @@ function scrollTripsIntoView() {
     document.getElementById("trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 const TRAVEL_STYLE_SLUGS = new Set(TRIP_STYLE_ORDER);
-/** Active vibe filter on home upcoming-trips chips (panel links still go to style pages). */
-let activeStyleChip = "backpackers";
+/** Active vibe filter on home upcoming-trips chips. Empty string means "All vibes". */
+let activeStyleChip = "";
 function syncStyleChipUi() {
     document.querySelectorAll("[data-style-chip]").forEach((chip) => {
-        const isActive = chip.dataset.styleChip === activeStyleChip;
+        const slug = chip.dataset.styleChip || "";
+        // The "all" chip is active whenever no specific vibe is selected.
+        const isActive = slug === "all" ? activeStyleChip === "" : slug === activeStyleChip;
         chip.classList.toggle("active", isActive);
         chip.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
@@ -212,9 +218,16 @@ function setupStyleChipFilters() {
     document.querySelectorAll("[data-style-chip]").forEach((chip) => {
         chip.addEventListener("click", () => {
             const slug = (chip.dataset.styleChip || "").trim();
-            if (!slug || !TRAVEL_STYLE_SLUGS.has(slug))
+            if (slug === "all") {
+                activeStyleChip = "";
+            }
+            else if (TRAVEL_STYLE_SLUGS.has(slug)) {
+                // Tapping the already-active vibe falls back to "All" (empty filter).
+                activeStyleChip = activeStyleChip === slug ? "" : slug;
+            }
+            else {
                 return;
-            activeStyleChip = activeStyleChip === slug ? "" : slug;
+            }
             syncStyleChipUi();
             filterTripsAndReveal({ scroll: true });
         });
@@ -240,33 +253,6 @@ function setupMobileMenu() {
         mobileMenuBtn.classList.toggle("active");
     });
 }
-function createWbModal(title, bodyHtml, options) {
-    const modal = document.createElement("div");
-    modal.className = "wb-modal";
-    const cardClass = [
-        "wb-modal-card",
-        options?.wide ? "wb-modal-card--wide" : "",
-        options?.tall ? "wb-modal-card--tall" : "",
-    ]
-        .filter(Boolean)
-        .join(" ");
-    modal.innerHTML = `
-    <div class="${cardClass}">
-      <div class="wb-modal-head">
-        <h3>${title}</h3>
-        <button type="button" class="wb-modal-close" aria-label="Close">&times;</button>
-      </div>
-      ${bodyHtml}
-    </div>
-  `;
-    document.body.appendChild(modal);
-    modal.querySelector(".wb-modal-close")?.addEventListener("click", () => modal.remove());
-    modal.addEventListener("click", (event) => {
-        if (event.target === modal)
-            modal.remove();
-    });
-    return modal;
-}
 function openItineraryModal(trip) {
     const html = getItineraryHtmlForTrip(trip);
     if (!html)
@@ -282,16 +268,7 @@ function openBookingModal(trip) {
     const isLoggedIn = !!(token && user?.role === "user");
     const defaultDate = trip.startDate || todayIso();
     const minDate = todayIso();
-    const guestFields = isLoggedIn
-        ? ""
-        : `
-      <label>Full name *</label>
-      <input id="bk_name" type="text" required minlength="2" />
-      <label>Mobile *</label>
-      <input id="bk_mobile" type="tel" required placeholder="10-digit Indian number" />
-      <label>Email</label>
-      <input id="bk_email" type="email" />
-    `;
+    const guestFields = isLoggedIn ? "" : guestBookingFieldsHtml();
     const body = `
     <p class="muted">${trip.title} · ${trip.location} · ${trip.durationLabel}</p>
     <form id="bk_form" novalidate>
@@ -302,28 +279,12 @@ function openBookingModal(trip) {
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
       <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
       <p class="bk-pay-note muted" id="bk_pay_note" hidden></p>
-      <div class="wb-modal-actions">
-        <button type="button" class="wb-cancel" id="bk_cancel">Cancel</button>
-        <button type="submit" class="wb-primary" id="bk_submit">Confirm booking</button>
-      </div>
+      ${bookingModalActionsHtml()}
     </form>
   `;
     const modal = createWbModal(`Book: ${escapeHtml(trip.title)}`, body);
-    let paySubmitLabel = "Confirm booking";
-    void fetchRazorpayConfig().then((cfg) => {
-        if (!cfg.enabled)
-            return;
-        const note = modal.querySelector("#bk_pay_note");
-        const submit = modal.querySelector("#bk_submit");
-        if (note) {
-            note.hidden = false;
-            note.textContent = bookingAdvanceNoticeText(cfg.advance_percent, cfg.advance_refund_days ?? 12);
-        }
-        if (submit) {
-            paySubmitLabel = `Book & pay ${cfg.advance_percent}% advance`;
-            submit.textContent = paySubmitLabel;
-        }
-    });
+    if (!isLoggedIn)
+        wireBookingMobileField(modal);
     const extrasWrap = modal.querySelector("#bk_extras_wrap");
     const peopleEl = modal.querySelector("#bk_people");
     const syncBookingExtras = () => {
@@ -345,8 +306,7 @@ function openBookingModal(trip) {
     syncBookingExtras();
     peopleEl?.addEventListener("input", syncBookingExtras);
     modal.querySelector("#bk_cancel")?.addEventListener("click", () => modal.remove());
-    modal.querySelector("#bk_form")?.addEventListener("submit", async (event) => {
-        event.preventDefault();
+    const runPay = (paymentKind) => {
         const date = modal.querySelector("#bk_date").value;
         const people = Number(modal.querySelector("#bk_people").value);
         if (!date) {
@@ -367,105 +327,45 @@ function openBookingModal(trip) {
             showMessagePopup("Each traveler's name must be at least 2 characters.", "error");
             return;
         }
-        const submitBtn = modal.querySelector("#bk_submit");
-        const resetSubmitBtn = () => {
-            if (!submitBtn?.isConnected)
-                return;
-            submitBtn.disabled = false;
-            submitBtn.textContent = paySubmitLabel;
+        if (!isLoggedIn && !validateGuestBookingFields(modal).ok)
+            return;
+        const payAdvance = modal.querySelector("#bk_pay_advance");
+        const payFull = modal.querySelector("#bk_pay_full");
+        const setBusy = (label) => {
+            if (payAdvance)
+                payAdvance.disabled = true;
+            if (payFull)
+                payFull.disabled = true;
+            if (paymentKind === "full" && payFull)
+                payFull.textContent = label;
+            else if (payAdvance)
+                payAdvance.textContent = label;
         };
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Booking…";
-        }
-        try {
-            let saved = {};
-            let contact = {};
-            if (isLoggedIn) {
-                const res = await fetch(`${API_BASE_URL}/bookings/user`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-                    body: JSON.stringify({
-                        trip_id: trip._id,
-                        date_of_travel: date,
-                        number_of_people: people,
-                        additional_travelers: extraNames,
-                    }),
-                });
-                if (!res.ok)
-                    throw new Error(await parseError(res));
-                saved = await res.json();
-                contact = {
-                    name: user?.name,
-                    email: user?.email,
-                    mobile: user?.mobile,
-                };
-            }
-            else {
-                const name = modal.querySelector("#bk_name").value.trim();
-                const mobile = modal.querySelector("#bk_mobile").value.trim();
-                const email = modal.querySelector("#bk_email").value.trim();
-                if (!name || !mobile) {
-                    showMessagePopup("Name and mobile are required", "error");
-                    resetSubmitBtn();
-                    return;
+        const setIdle = () => {
+            if (!modal.isConnected)
+                return;
+            void fetchRazorpayConfig().then((cfg) => {
+                if (payAdvance) {
+                    payAdvance.disabled = !cfg.enabled;
+                    payAdvance.textContent = `Pay ${cfg.advance_percent}% advance`;
                 }
-                const res = await fetch(`${API_BASE_URL}/bookings/guest`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        trip_id: trip._id,
-                        travel_destination: trip.title,
-                        date_of_travel: date,
-                        full_name: name,
-                        mobile,
-                        email: email || null,
-                        number_of_people: people,
-                        additional_travelers: extraNames,
-                    }),
-                });
-                if (!res.ok)
-                    throw new Error(await parseError(res));
-                saved = await res.json();
-                contact = { name, email: email || undefined, mobile };
-            }
-            const refundDays = saved.advance_refund_days ?? 12;
-            if (saved.razorpay_enabled) {
-                if (submitBtn)
-                    submitBtn.textContent = "Opening payment…";
-                try {
-                    const { message } = await completeBookingWithOptionalRazorpay(saved, contact, trip.title, date);
-                    modal.remove();
-                    showSuccessModal("Booking confirmed", message);
+                if (payFull) {
+                    payFull.disabled = !cfg.enabled;
+                    payFull.textContent = "Pay full amount";
                 }
-                catch (payError) {
-                    modal.remove();
-                    const bookingId = (saved.booking_id || "").trim();
-                    handlePaymentFlowError(payError, refundDays, bookingId
-                        ? {
-                            bookingId,
-                            contact,
-                            tripTitle: trip.title,
-                            travelDate: date,
-                        }
-                        : undefined);
-                    logger.warn("advance payment not completed", payError);
-                }
-            }
-            else {
-                modal.remove();
-                showSuccessModal("Booking received", `Your booking for ${trip.title} on ${date} is in. Our team will reach out shortly.`);
-            }
-            logger.info("booking confirmed", { trip: trip.title, date, people });
-        }
-        catch (error) {
-            logger.error("booking failed", error);
-            showMessagePopup(error instanceof Error ? error.message : "Booking failed", "error");
-        }
-        finally {
-            resetSubmitBtn();
-        }
-    });
+            });
+        };
+        void submitBookingAndPay(modal, trip, paymentKind, {
+            date,
+            people,
+            extraNames,
+            isLoggedIn,
+            token,
+            onBusy: setBusy,
+            onIdle: setIdle,
+        });
+    };
+    setupBookingPaymentUi(modal, runPay);
 }
 function setupItineraryButtons() {
     if (!tripsContainer)
@@ -496,6 +396,18 @@ function attachBookHandlers() {
             }
             openBookingModal(trip);
         });
+    });
+}
+function attachWhatsappHandlers() {
+    document.querySelectorAll(".btn-book-whatsapp").forEach((link) => {
+        link.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const card = link.closest(".trip-card");
+            const trip = allTrips.find((item) => item._id === card?.dataset.id);
+            const url = trip ? buildWhatsappBookUrl(trip) : link.href;
+            window.open(url, "_blank", "noopener,noreferrer");
+        }, { capture: true });
     });
 }
 function ordinal(n) {
@@ -547,21 +459,66 @@ function openTripDetailModal(trip) {
         openBookingModal(trip);
     });
 }
+/** Compare two ISO date strings; assume start/end are inclusive whole days. */
+function daysUntilTripStart(trip) {
+    if (!trip.startDate)
+        return Number.POSITIVE_INFINITY;
+    const start = parseTravelDate(String(trip.startDate).slice(0, 10));
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const ms = start.getTime() - now.getTime();
+    return Math.round(ms / 86400000);
+}
+/** Derive trip length (in nights) from start/end dates; falls back to NaN. */
+function tripNights(trip) {
+    if (!trip.startDate || !trip.endDate)
+        return Number.NaN;
+    const s = parseTravelDate(String(trip.startDate).slice(0, 10));
+    const e = parseTravelDate(String(trip.endDate).slice(0, 10));
+    return Math.max(0, Math.round((e.getTime() - s.getTime()) / 86400000));
+}
+/** Returns a small badge object for a trip's urgency, or null when irrelevant.
+ *  Pure UI heuristic — no backend field required. */
+function getTripUrgency(trip) {
+    const days = daysUntilTripStart(trip);
+    if (!Number.isFinite(days) || days < 0)
+        return null;
+    if (days <= 7)
+        return { label: "Closing soon", variant: "hot" };
+    if (days <= 14)
+        return { label: "Few seats left", variant: "warm" };
+    if (days <= 30)
+        return { label: "Filling up", variant: "cool" };
+    return null;
+}
+/** Builds a pre-filled WhatsApp deep link for a one-tap trip enquiry. */
+function buildWhatsappBookUrl(trip) {
+    const msg = `Hi! i need information about ${trip.title}`;
+    return `https://wa.me/919151584677?text=${encodeURIComponent(msg)}`;
+}
 function renderTripCard(trip) {
+    const urgency = getTripUrgency(trip);
+    const days = daysUntilTripStart(trip);
+    const ctaLabel = days <= 7 && days >= 0 ? "Book Today" : "Book Now";
+    const waUrl = buildWhatsappBookUrl(trip);
+    const safeTitle = escapeHtml(trip.title);
     return `
     <div class="swiper-slide">
       <article class="trip-card" data-id="${trip._id}">
         <div class="trip-card-media">
-          <img src="${normalizeImageUrl(trip.imageUrl)}" alt="${trip.title}" loading="lazy">
+          <img src="${normalizeImageUrl(trip.imageUrl)}" alt="${safeTitle}" loading="lazy">
           <span class="trip-tag">Trip Special</span>
           <span class="trip-date-badge">${formatTripDateRange(trip.startDate, trip.endDate)}</span>
+          ${urgency
+        ? `<span class="trip-urgency trip-urgency--${urgency.variant}" title="${escapeHtml(urgency.label)}">${escapeHtml(urgency.label)}</span>`
+        : ""}
         </div>
         <div class="trip-card-body">
-          <h3 class="trip-title">${trip.title}</h3>
-          <p class="trip-sub">${trip.location}</p>
+          <h3 class="trip-title">${safeTitle}</h3>
+          <p class="trip-sub">${escapeHtml(trip.location)}</p>
           <div class="trip-meta">
-            <span class="meta-item">📅 ${trip.durationLabel}</span>
-            <span class="meta-item">📍 ${trip.location}</span>
+            <span class="meta-item">📅 ${escapeHtml(trip.durationLabel)}</span>
+            <span class="meta-item">📍 ${escapeHtml(trip.location)}</span>
           </div>
           <div class="trip-card-foot">
             <div class="trip-price">₹ ${Number(trip.price).toLocaleString("en-IN")}</div>
@@ -569,7 +526,12 @@ function renderTripCard(trip) {
               ${tripHasItineraryForTrip(trip)
         ? `<button type="button" class="btn-itinerary" data-itinerary-trip-id="${escapeHtml(trip._id)}">📋 Itinerary</button>`
         : ""}
-              <a href="#" class="btn-book-now" data-book>📞 Book Now</a>
+              <a href="#" class="btn-book-now" data-book>${escapeHtml(ctaLabel)}</a>
+              <a href="${waUrl}" class="btn-book-whatsapp" target="_blank" rel="noopener noreferrer" aria-label="Book ${safeTitle} on WhatsApp">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path fill="currentColor" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.435 9.884-9.884 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                </svg>
+              </a>
             </div>
           </div>
         </div>
@@ -587,9 +549,24 @@ function initTripsSwiper() {
         tripsSwiper = null;
     }
     tripsSwiper = new SwiperCtor(".tripsSwiper", {
-        slidesPerView: 1,
-        spaceBetween: 16,
-        watchOverflow: true,
+        slidesPerView: "auto",
+        centeredSlides: true,
+        grabCursor: true,
+        rewind: true,
+        speed: 400,
+        followFinger: true,
+        touchRatio: 1,
+        touchAngle: 45,
+        threshold: 8,
+        longSwipesRatio: 0.25,
+        touchEventsTarget: "container",
+        preventClicks: false,
+        preventClicksPropagation: false,
+        autoplay: {
+            delay: 5500,
+            disableOnInteraction: false,
+            pauseOnMouseEnter: true,
+        },
         navigation: {
             nextEl: "#tripsNext",
             prevEl: "#tripsPrev",
@@ -598,25 +575,162 @@ function initTripsSwiper() {
             el: ".trips-pagination",
             clickable: true,
         },
-        breakpoints: {
-            560: { slidesPerView: 2, spaceBetween: 16 },
-            900: { slidesPerView: 3, spaceBetween: 20 },
-            1200: { slidesPerView: 4, spaceBetween: 24 },
-        },
     });
+}
+function sortTripsList(trips, key) {
+    const list = [...trips];
+    switch (key) {
+        case "cheapest":
+            list.sort((a, b) => Number(a.price || 0) - Number(b.price || 0));
+            break;
+        case "shortest":
+            list.sort((a, b) => {
+                const na = tripNights(a);
+                const nb = tripNights(b);
+                const safeA = Number.isFinite(na) ? na : Number.POSITIVE_INFINITY;
+                const safeB = Number.isFinite(nb) ? nb : Number.POSITIVE_INFINITY;
+                return safeA - safeB;
+            });
+            break;
+        case "earliest":
+        default:
+            list.sort((a, b) => daysUntilTripStart(a) - daysUntilTripStart(b));
+            break;
+    }
+    return list;
+}
+function updateTripsCount(count) {
+    if (!tripsCountEl)
+        return;
+    if (count <= 0) {
+        tripsCountEl.textContent = "No trips match";
+        return;
+    }
+    const noun = count === 1 ? "trip" : "trips";
+    tripsCountEl.textContent = `${count} ${noun} available`;
 }
 function renderTrips(trips, options) {
     if (!tripsContainer)
         return;
+    const sorted = trips.length ? sortTripsList(trips, tripSort) : trips;
+    updateTripsCount(sorted.length);
     const emptyHint = options?.emptyHint ?? "No trips available right now.";
-    if (!trips.length) {
+    if (!sorted.length) {
         tripsContainer.innerHTML = `<div class="swiper-slide"><div class="trip-empty">${emptyHint}</div></div>`;
     }
     else {
-        tripsContainer.innerHTML = trips.map(renderTripCard).join("");
+        tripsContainer.innerHTML = sorted.map(renderTripCard).join("");
     }
     attachBookHandlers();
+    attachWhatsappHandlers();
     initTripsSwiper();
+}
+function setupTripSort() {
+    if (!tripsSortSelect)
+        return;
+    tripsSortSelect.value = tripSort;
+    tripsSortSelect.addEventListener("change", () => {
+        const value = tripsSortSelect.value;
+        if (value === "earliest" || value === "cheapest" || value === "shortest") {
+            tripSort = value;
+            filterTripsAndReveal();
+        }
+    });
+}
+function populateNavTripsDropdown() {
+    const menu = document.getElementById("navTripsMenu");
+    if (!menu || !allTrips.length) {
+        if (menu)
+            menu.innerHTML = '<div class="nav-dropdown-empty">No trips right now</div>';
+        return;
+    }
+    const grouped = new Map();
+    for (const trip of allTrips) {
+        const state = trip.location || "Other";
+        if (!grouped.has(state))
+            grouped.set(state, []);
+        grouped.get(state).push(trip);
+    }
+    const sortedStates = [...grouped.keys()].sort((a, b) => a.localeCompare(b));
+    let html = "";
+    for (const state of sortedStates) {
+        const trips = grouped.get(state);
+        html += `<div class="nav-dropdown-group">`;
+        html += `<div class="nav-dropdown-state">${escapeHtml(state)}</div>`;
+        for (const trip of trips) {
+            const dateRange = formatTripDateRange(trip.startDate, trip.endDate);
+            const price = `₹${Number(trip.price).toLocaleString("en-IN")}`;
+            html += `<button type="button" class="nav-dropdown-trip" data-trip-id="${escapeHtml(trip._id)}" role="menuitem">
+        <span class="nav-dropdown-trip-name">${escapeHtml(trip.title)}</span>
+        <span class="nav-dropdown-trip-meta">${dateRange ? escapeHtml(dateRange) + " · " : ""}${price}</span>
+      </button>`;
+        }
+        html += `</div>`;
+    }
+    html += `<div class="nav-dropdown-footer"><a href="#trips" class="nav-dropdown-all">View all upcoming trips →</a></div>`;
+    menu.innerHTML = html;
+    attachSmoothScroll(menu);
+    menu.querySelector(".nav-dropdown-all")?.addEventListener("click", () => {
+        closeNavDropdown();
+    });
+    menu.addEventListener("click", (e) => {
+        const btn = e.target.closest(".nav-dropdown-trip");
+        if (!btn)
+            return;
+        const trip = allTrips.find((t) => t._id === btn.dataset.tripId);
+        if (trip) {
+            closeNavDropdown();
+            openTripDetailModal(trip);
+        }
+    });
+}
+function setupNavTripsDropdown() {
+    const wrapper = document.getElementById("navTripsDropdown");
+    const trigger = wrapper?.querySelector(".nav-dropdown-trigger");
+    const menu = document.getElementById("navTripsMenu");
+    if (!wrapper || !trigger || !menu)
+        return;
+    let open = false;
+    function openDropdown() {
+        if (open)
+            return;
+        open = true;
+        wrapper.classList.add("nav-dropdown--open");
+        trigger.setAttribute("aria-expanded", "true");
+    }
+    function closeDropdown() {
+        if (!open)
+            return;
+        open = false;
+        wrapper.classList.remove("nav-dropdown--open");
+        trigger.setAttribute("aria-expanded", "false");
+    }
+    // Desktop: hover
+    wrapper.addEventListener("mouseenter", openDropdown);
+    wrapper.addEventListener("mouseleave", closeDropdown);
+    // Never scroll on click — hover opens on desktop, tap toggles on mobile
+    trigger.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (window.innerWidth <= 768) {
+            open ? closeDropdown() : openDropdown();
+        }
+    });
+    // Close on outside click
+    document.addEventListener("click", (e) => {
+        if (open && !wrapper.contains(e.target))
+            closeDropdown();
+    });
+    // Close on Escape
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && open)
+            closeDropdown();
+    });
+}
+function closeNavDropdown() {
+    const wrapper = document.getElementById("navTripsDropdown");
+    wrapper?.classList.remove("nav-dropdown--open");
+    wrapper?.querySelector(".nav-dropdown-trigger")?.setAttribute("aria-expanded", "false");
 }
 async function loadTrips() {
     try {
@@ -636,6 +750,7 @@ async function loadTrips() {
         allTrips = (payload.trips || []).filter(isUpcomingTrip);
         syncStyleChipUi();
         filterTripsAndReveal();
+        populateNavTripsDropdown();
     }
     catch (error) {
         const msg = error instanceof TypeError && (error.message.includes("fetch") || error.message.includes("Load failed"))
@@ -653,6 +768,14 @@ function filterUpcomingTrips(term, applyStyleWhenEmpty = true) {
         filtered = filtered.filter((trip) => (trip.tripStyle || "backpackers") === activeStyleChip);
     }
     return filtered;
+}
+function clearHeroSearchInputs() {
+    if (heroTravelStyleSelect)
+        heroTravelStyleSelect.value = "";
+    if (heroTravelMonthSelect)
+        heroTravelMonthSelect.value = "";
+    refreshHeroSelect(heroTravelStyleSelect);
+    refreshHeroSelect(heroTravelMonthSelect);
 }
 function clearSearchInputs() {
     if (searchInput)
@@ -808,71 +931,38 @@ function handleHeroFindTrips() {
         ? "No upcoming trips match those filters. Try another style or month."
         : undefined;
     renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
+    clearHeroSearchInputs();
     scrollTripsIntoView();
 }
 /**
- * JS-driven parallax for sections that opt in via `[data-parallax]`
- * (currently `.trips` and `.about-us`).
- *
- * Why JS instead of `background-attachment: fixed`?
- * `fixed` ties the photo to the VIEWPORT, which causes the photo's edges
- * to briefly align with the section's edges as you scroll, producing a
- * thin tone-mismatched "line" at the boundary with adjacent sections.
- * This implementation welds the photo to the section (via a ::before
- * pseudo-element that is taller than the section) and shifts its internal
- * position with a translateY proportional to the section's distance from
- * the viewport centre. The photo always FITS the frame and still MOVES.
+ * Pause hero Ken Burns slideshow when scrolled off-screen — keeps GPU free
+ * while the user scrolls the rest of the page.
  */
-function setupParallax() {
+function setupHeroAnimationPause() {
+    const hero = document.querySelector(".hero-cinematic");
+    if (!hero)
+        return;
     const prefersReducedMotion = typeof window.matchMedia === "function" &&
         window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (prefersReducedMotion) {
-        logger.info("Parallax disabled: user prefers reduced motion");
+        hero.classList.add("is-offscreen");
         return;
     }
-    const sections = Array.from(document.querySelectorAll(".trips, .about-us"));
-    if (sections.length === 0)
-        return;
-    // Strength tuned so the photo lags subtly behind content (~22%).
-    // The ::before pseudo is sized to allow up to 25% translation in either
-    // direction, so this stays within bounds for any reasonable viewport.
-    const PARALLAX_STRENGTH = 0.22;
-    let frameRequested = false;
-    const update = () => {
-        frameRequested = false;
-        const viewportH = window.innerHeight;
-        const viewportCenter = viewportH / 2;
-        for (const section of sections) {
-            const rect = section.getBoundingClientRect();
-            // Only run math while the section is anywhere near the viewport.
-            if (rect.bottom < -viewportH || rect.top > viewportH * 2) {
-                section.style.setProperty("--parallax-y", "0px");
-                continue;
-            }
-            const sectionCenter = rect.top + rect.height / 2;
-            const distance = sectionCenter - viewportCenter;
-            const offset = -distance * PARALLAX_STRENGTH;
-            section.style.setProperty("--parallax-y", `${offset.toFixed(2)}px`);
-        }
-    };
-    const requestUpdate = () => {
-        if (frameRequested)
-            return;
-        frameRequested = true;
-        requestAnimationFrame(update);
-    };
-    window.addEventListener("scroll", requestUpdate, { passive: true });
-    window.addEventListener("resize", requestUpdate, { passive: true });
-    update();
-    logger.info("Parallax initialised", { sections: sections.length });
+    const observer = new IntersectionObserver(([entry]) => {
+        hero.classList.toggle("is-offscreen", !entry?.isIntersecting);
+    }, { root: null, threshold: 0, rootMargin: "0px" });
+    observer.observe(hero);
 }
 function setupTripCardOpenDetail() {
     if (!tripsContainer)
         return;
     tripsContainer.addEventListener("click", (event) => {
         const target = event.target;
-        if (target.closest("[data-book]") || target.closest("[data-itinerary-trip-id]"))
+        if (target.closest("[data-book]") ||
+            target.closest("[data-itinerary-trip-id]") ||
+            target.closest(".btn-book-whatsapp")) {
             return;
+        }
         const card = target.closest(".trip-card");
         if (!card?.dataset.id)
             return;
@@ -885,12 +975,16 @@ function setupTripCardOpenDetail() {
     });
 }
 document.addEventListener("DOMContentLoaded", async () => {
+    document.body.style.overflow = "";
+    document.body.classList.remove("wb-razorpay-checkout");
     updateHeaderAuth();
     await mountHomePreviousTravels();
     setupMobileMenu();
     attachSmoothScroll(document);
-    setupParallax();
+    setupHeroAnimationPause();
     setupStyleChipFilters();
+    setupTripSort();
+    setupNavTripsDropdown();
     populateHeroMonthOptions();
     setupHeroMobileSelects();
     syncStyleChipUi();

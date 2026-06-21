@@ -4,7 +4,7 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from auth_utils import sanitize_text
+from auth_utils import normalize_indian_mobile, sanitize_text
 
 TripStyleSlug = Literal["backpackers", "motorcycle_diaries", "dolce_far_niente", "hikers"]
 TRIP_STYLE_SLUGS = frozenset({"backpackers", "motorcycle_diaries", "dolce_far_niente", "hikers"})
@@ -13,7 +13,7 @@ TRIP_STYLE_SLUGS = frozenset({"backpackers", "motorcycle_diaries", "dolce_far_ni
 class UserSignupRequest(BaseModel):
   name: str = Field(min_length=2, max_length=60)
   email: EmailStr
-  mobile: str = Field(min_length=10, max_length=15)
+  mobile: str = Field(min_length=1, max_length=20)
   password: str = Field(min_length=8, max_length=72)
 
   @field_validator("email", mode="before")
@@ -33,13 +33,12 @@ class UserSignupRequest(BaseModel):
       raise ValueError("name must have letters and spaces only")
     return cleaned
 
-  @field_validator("mobile")
+  @field_validator("mobile", mode="before")
   @classmethod
-  def validate_mobile(cls, value: str) -> str:
-    mobile = value.strip()
-    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
-      raise ValueError("invalid mobile number")
-    return mobile
+  def normalize_mobile(cls, value: object) -> str:
+    if value is None:
+      raise ValueError("please enter a valid mobile number")
+    return normalize_indian_mobile(str(value))
 
   @field_validator("password")
   @classmethod
@@ -64,7 +63,7 @@ class GuestBookingRequest(BaseModel):
   travel_destination: str = Field(min_length=3, max_length=120)
   date_of_travel: str
   full_name: str = Field(min_length=2, max_length=60)
-  mobile: str = Field(min_length=10, max_length=15)
+  mobile: str = Field(min_length=1, max_length=20)
   email: Optional[EmailStr] = None
   number_of_people: int = Field(ge=1, le=20, default=1)
   additional_travelers: List[str] = Field(default_factory=list, max_length=19)
@@ -98,13 +97,12 @@ class GuestBookingRequest(BaseModel):
   def validate_text_fields(cls, value: str) -> str:
     return sanitize_text(value)
 
-  @field_validator("mobile")
+  @field_validator("mobile", mode="before")
   @classmethod
-  def validate_mobile(cls, value: str) -> str:
-    mobile = value.strip()
-    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
-      raise ValueError("invalid mobile number")
-    return mobile
+  def normalize_mobile(cls, value: object) -> str:
+    if value is None:
+      raise ValueError("please enter a valid mobile number")
+    return normalize_indian_mobile(str(value))
 
   @field_validator("date_of_travel")
   @classmethod
@@ -119,7 +117,7 @@ class PlannedTripRequest(BaseModel):
   travel_destination: str = Field(min_length=3, max_length=120)
   date_of_travel: str
   full_name: str = Field(min_length=2, max_length=60)
-  mobile: str = Field(min_length=10, max_length=15)
+  mobile: str = Field(min_length=1, max_length=20)
   email: Optional[EmailStr] = None
   number_of_people: int = Field(ge=1, le=20, default=1)
   additional_travelers: List[str] = Field(default_factory=list, max_length=19)
@@ -152,13 +150,12 @@ class PlannedTripRequest(BaseModel):
   def validate_text_fields(cls, value: str) -> str:
     return sanitize_text(value)
 
-  @field_validator("mobile")
+  @field_validator("mobile", mode="before")
   @classmethod
-  def validate_mobile(cls, value: str) -> str:
-    mobile = value.strip()
-    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
-      raise ValueError("invalid mobile number")
-    return mobile
+  def normalize_mobile(cls, value: object) -> str:
+    if value is None:
+      raise ValueError("please enter a valid mobile number")
+    return normalize_indian_mobile(str(value))
 
   @field_validator("date_of_travel")
   @classmethod
@@ -186,15 +183,14 @@ class EmailOtpRequest(BaseModel):
 
 
 class MobileOtpRequest(BaseModel):
-  new_mobile: str = Field(min_length=10, max_length=15)
+  new_mobile: str = Field(min_length=1, max_length=20)
 
-  @field_validator("new_mobile")
+  @field_validator("new_mobile", mode="before")
   @classmethod
-  def validate_mobile(cls, value: str) -> str:
-    mobile = value.strip()
-    if not re.fullmatch(r"^[6-9]\d{9,14}$", mobile):
-      raise ValueError("invalid mobile number")
-    return mobile
+  def normalize_new_mobile(cls, value: object) -> str:
+    if value is None:
+      raise ValueError("please enter a valid mobile number")
+    return normalize_indian_mobile(str(value))
 
 
 class OtpVerifyRequest(BaseModel):
@@ -250,25 +246,70 @@ class AdminConfirmBookingRequest(AdminConfirmPaymentFields):
     return value.strip()
 
 
+PaymentKind = Literal["advance", "full"]
+
+
 class RazorpayCreateOrderRequest(BaseModel):
-  booking_id: str = Field(min_length=1, max_length=64)
+  booking_id: Optional[str] = Field(default=None, max_length=64)
+  pending_token: Optional[str] = Field(default=None, max_length=8192)
+  payment_kind: PaymentKind = "advance"
 
   @field_validator("booking_id")
   @classmethod
-  def strip_booking_id(cls, value: str) -> str:
-    return value.strip()
+  def strip_booking_id(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    stripped = value.strip()
+    return stripped or None
+
+  @field_validator("pending_token")
+  @classmethod
+  def strip_pending_token(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    stripped = value.strip()
+    return stripped or None
+
+  @model_validator(mode="after")
+  def require_booking_ref(self) -> "RazorpayCreateOrderRequest":
+    has_id = bool(self.booking_id)
+    has_token = bool(self.pending_token)
+    if has_id == has_token:
+      raise ValueError("provide exactly one of booking_id or pending_token")
+    return self
 
 
 class RazorpayVerifyRequest(BaseModel):
-  booking_id: str = Field(min_length=1, max_length=64)
+  booking_id: Optional[str] = Field(default=None, max_length=64)
+  pending_token: Optional[str] = Field(default=None, max_length=8192)
+  payment_kind: PaymentKind = "advance"
   razorpay_order_id: str = Field(min_length=1, max_length=128)
   razorpay_payment_id: str = Field(min_length=1, max_length=128)
   razorpay_signature: str = Field(min_length=1, max_length=256)
 
   @field_validator("booking_id")
   @classmethod
-  def strip_booking_id(cls, value: str) -> str:
-    return value.strip()
+  def strip_booking_id(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    stripped = value.strip()
+    return stripped or None
+
+  @field_validator("pending_token")
+  @classmethod
+  def strip_pending_token(cls, value: Optional[str]) -> Optional[str]:
+    if value is None:
+      return None
+    stripped = value.strip()
+    return stripped or None
+
+  @model_validator(mode="after")
+  def require_booking_ref(self) -> "RazorpayVerifyRequest":
+    has_id = bool(self.booking_id)
+    has_token = bool(self.pending_token)
+    if has_id == has_token:
+      raise ValueError("provide exactly one of booking_id or pending_token")
+    return self
 
 
 class AdminMarkFullPaymentRequest(BaseModel):
