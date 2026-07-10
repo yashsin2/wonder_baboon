@@ -39,6 +39,13 @@ class MongoService:
       raise RuntimeError(
         "This server isn't set up to reach the database. Please contact support."
       )
+    if self._client is not None:
+      try:
+        self._client.close()
+      except Exception:
+        pass
+      self._client = None
+      self._db = None
     self._client = MongoClient(
       MONGO_URI,
       serverSelectionTimeoutMS=10000,
@@ -49,14 +56,19 @@ class MongoService:
       self._db = self._client["userlogindetails"]
       self._ready = True
     except PyMongoError as error:
-      logger.warning("MongoDB connection failed on startup: %s", error)
+      logger.warning("MongoDB connection failed: %s", error)
       self._ready = False
+      try:
+        self._client.close()
+      except Exception:
+        pass
+      self._client = None
+      self._db = None
 
   def ensure_ready(self) -> None:
     if self._ready and self._db is not None:
       return
-    if self._client is None:
-      self.connect()
+    self.connect()
     if not self._ready or self._db is None:
       logger.error("MongoDB unavailable: ensure_ready failed (connected=%s)", self._ready)
       raise RuntimeError(

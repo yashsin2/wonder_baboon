@@ -1,7 +1,4 @@
 (function () {
-  var KEY = "wb_app_version";
-  var BANNER_ID = "wb-update-banner";
-
   document.addEventListener(
     "contextmenu",
     function (e) {
@@ -9,6 +6,9 @@
     },
     { capture: true }
   );
+
+  var KEY = "wb_app_version";
+  var BANNER_ID = "wb-update-banner";
 
   function showUpdateBanner() {
     if (document.getElementById(BANNER_ID)) return;

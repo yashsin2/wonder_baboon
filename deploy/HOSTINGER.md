@@ -21,6 +21,19 @@ The site uses **clean URLs** (`/upcoming-trips`, not `/upcoming-trips.html`). Ho
 
 Returning visitors pick up changes automatically; users with an old tab open see a refresh prompt at the bottom of the page.
 
+## Hero slideshow images
+
+The home page rotates photos from `public_html/assets/`. If any file is missing on the server, the slideshow can show a **black hero** (the slide fades in on top with no image). After deploy, verify each URL returns **200**:
+
+- `/assets/lake.jpg`
+- `/assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg`
+- `/assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg`
+- `/assets/nature-photographer-29ezCWtMtnM-unsplash.jpg`
+- `/assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg`
+- `/assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg`
+
+Upload the full `frontend/assets/` folder — long filenames are easy to miss in File Manager. Newer JS skips missing slides, but you should still upload every hero image.
+
 ## Required file: `.htaccess`
 
 This file lives at `frontend/.htaccess` in the repo. It must sit next to `index.html` on the server.

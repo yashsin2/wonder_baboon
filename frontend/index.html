@@ -25,13 +25,13 @@
   <link rel="icon" href="https://wonderbaboon.com/wb-favicon.ico" sizes="any">
   <link rel="apple-touch-icon" href="https://wonderbaboon.com/wb-apple-touch-icon.png">
   <link rel="manifest" href="/site.webmanifest">
-  <link rel="preload" as="image" href="./assets/lake.jpg" fetchpriority="high">
-  <link rel="preload" as="image" href="./assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg">
-  <link rel="preload" as="image" href="./assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg">
-  <link rel="preload" as="image" href="./assets/nature-photographer-29ezCWtMtnM-unsplash.jpg">
-  <link rel="preload" as="image" href="./assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg">
-  <link rel="preload" as="image" href="./assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg">
-  <link rel="stylesheet" href="/styles.css?v=20250621">
+  <link rel="preload" as="image" href="/assets/lake.jpg" fetchpriority="high">
+  <link rel="preload" as="image" href="/assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg">
+  <link rel="preload" as="image" href="/assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg">
+  <link rel="preload" as="image" href="/assets/nature-photographer-29ezCWtMtnM-unsplash.jpg">
+  <link rel="preload" as="image" href="/assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg">
+  <link rel="preload" as="image" href="/assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg">
+  <link rel="stylesheet" href="/styles.css?v=20250710a">
   <link rel="stylesheet" href="/previous-adventures.css?v=20250604">
   <!-- Swiper CSS -->
 <link
@@ -58,9 +58,10 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
   <header class="site-header">
   <div class="header-container">
-    <button type="button" class="hamburger-btn" id="openPanelBtn" aria-label="Open menu">
+    <button type="button" class="hamburger-btn header-mobile-menu" id="openPanelBtn" aria-label="Open menu">
       <span></span><span></span><span></span>
     </button>
+
     <a class="logo" href="/">
       <img src="./assets/logo.png" alt="Wonder Baboon Logo">
       <div class="logo-text-block">
@@ -68,6 +69,8 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
         <span class="logo-greeting" id="logoGreeting"></span>
       </div>
     </a>
+
+    <a class="header-mobile-title" href="/">Wonder Baboon</a>
 
     <nav class="nav-links" data-smooth-scroll>
       <div class="nav-dropdown" id="navTripsDropdown">
@@ -82,6 +85,16 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
     </nav>
 
     <div class="header-right">
+      <a class="phone" href="tel:+919151584677">📞 +91 91515 84677</a>
+    </div>
+
+    <div class="header-mobile-actions">
+      <button type="button" class="header-search-toggle" id="headerSearchToggle" aria-label="Search trips" aria-expanded="false" aria-controls="headerSearchDrawer">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="header-search-drawer" id="headerSearchDrawer" aria-hidden="true">
       <div class="search-bar wb-search wb-search--header">
         <div class="wb-search-field">
           <svg class="wb-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
@@ -89,7 +102,6 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
         </div>
         <button type="button" id="headerTripSearchBtn" class="wb-search-go" aria-label="Search trips">Go</button>
       </div>
-      <a class="phone" href="tel:+919151584677">📞 +91 91515 84677</a>
     </div>
   </div>
 </header>
@@ -152,12 +164,12 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
         <!-- Hero Section — cinematic Ken Burns slideshow -->
         <section class="hero hero-cinematic" id="hero">
             <div class="hero-slideshow" aria-hidden="true">
-                <div class="hero-slide is-active" style="background-image:url('./assets/lake.jpg')"></div>
-                <div class="hero-slide" style="background-image:url('./assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg')"></div>
-                <div class="hero-slide" style="background-image:url('./assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg')"></div>
-                <div class="hero-slide" style="background-image:url('./assets/nature-photographer-29ezCWtMtnM-unsplash.jpg')"></div>
-                <div class="hero-slide" style="background-image:url('./assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg')"></div>
-                <div class="hero-slide" style="background-image:url('./assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg')"></div>
+                <div class="hero-slide is-active" style="background-image:url('/assets/lake.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('/assets/devang-saklani-_Nv4GkG5l8c-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('/assets/aditya-siva-6rDbvXzIVpQ-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('/assets/nature-photographer-29ezCWtMtnM-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('/assets/srusti-valakamadinni-I_8I75ogzkE-unsplash.jpg')"></div>
+                <div class="hero-slide" style="background-image:url('/assets/alexey-turenkov-bWJiSZjIgTM-unsplash.jpg')"></div>
             </div>
 
             <div class="hero-scrim" aria-hidden="true"></div>
@@ -218,25 +230,30 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 </div>
 
 <section class="trips" id="trips">
-  <h2 class="section-title">✨ Upcoming Trips ✨</h2>
-  <p class="section-subtitle">Filter by vibe — tap a style to show matching trips below</p>
+  <div class="trips-section-intro">
+    <h2 class="section-title">✨ Upcoming Trips ✨</h2>
+    <p class="section-subtitle">
+      <span class="trips-subtitle-long">Filter by vibe — tap a style to show matching trips below</span>
+      <span class="trips-subtitle-short">— swipe to explore</span>
+    </p>
+  </div>
+  <div class="trips-filter-bar" id="tripsFilterBar" hidden aria-live="polite">
+    <div class="trips-filter-bar-inner">
+      <span class="trips-filter-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </span>
+      <span class="trips-filter-label" id="tripsFilterLabel"></span>
+      <button type="button" class="trips-filter-clear" id="tripsFilterClear" aria-label="Show all trips">
+        <span aria-hidden="true">×</span> All trips
+      </button>
+    </div>
+  </div>
   <div class="trip-style-chips" role="group" aria-label="Filter trips by travel style">
     <button type="button" class="trip-style-chip active" data-style-chip="all" aria-pressed="true">All</button>
     <button type="button" class="trip-style-chip" data-style-chip="backpackers" aria-pressed="false">The Backpackers</button>
     <button type="button" class="trip-style-chip" data-style-chip="motorcycle_diaries" aria-pressed="false">Motorcycle Diaries</button>
     <button type="button" class="trip-style-chip" data-style-chip="dolce_far_niente" aria-pressed="false">Dolce far niente</button>
     <button type="button" class="trip-style-chip" data-style-chip="hikers" aria-pressed="false">The Hikers</button>
-  </div>
-  <div class="trips-toolbar" aria-label="Trip results toolbar">
-    <span class="trips-count" id="tripsCount" aria-live="polite">Loading trips…</span>
-    <label class="trips-sort">
-      <span class="trips-sort-label">Sort:</span>
-      <select id="tripsSort" class="trips-sort-select" aria-label="Sort trips">
-        <option value="earliest">Earliest</option>
-        <option value="cheapest">Cheapest</option>
-        <option value="shortest">Shortest</option>
-      </select>
-    </label>
   </div>
   <div class="trips-carousel">
     <div class="swiper tripsSwiper">
@@ -279,7 +296,7 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
 <!-- Travel Style Section -->
 <section class="travel-style" id="travel-style">
   <div class="travel-style-content">
-    <h2>✨ Our Travel Style ✨</h2>
+    <h2>Our Travel Style</h2>
     <blockquote>
       "The freedom and simple beauty is too good to pass up."  
       <span>– Christopher McCandless</span>
@@ -362,8 +379,8 @@ href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"
   </div>
 </footer>
 
-<script type="module" src="/js/script.js?v=20250604"></script>
-<script type="module" src="/js/user-panel.js?v=20250604"></script>
-<script src="/version-check.js?v=20250604a" defer></script>
+<script type="module" src="/js/script.js?v=20250710a"></script>
+<script type="module" src="/js/user-panel.js?v=20250621g"></script>
+<script src="/version-check.js?v=20250621j" defer></script>
 </body>
 </html>

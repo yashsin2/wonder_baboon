@@ -24,7 +24,7 @@ import {
 } from "./booking-form.js";
 import { mountHomePreviousTravels } from "./home-previous-travels.js";
 import { fetchRazorpayConfig, PaymentKind } from "./razorpay-checkout.js";
-import { TRIP_STYLE_ORDER, TripStyleSlug } from "./trip-styles.js";
+import { TRIP_STYLE_ORDER, TRIP_STYLES, TripStyleSlug } from "./trip-styles.js";
 
 interface SwiperInstance {
   destroy: (deleteInstance?: boolean, cleanStyles?: boolean) => void;
@@ -59,6 +59,7 @@ let tripSort: TripSortKey = "earliest";
 const heroSelectBackdrop = document.getElementById("heroSelectBackdrop");
 
 const MOBILE_HERO_SELECT = window.matchMedia("(max-width: 768px)");
+const MOBILE_HEADER_LAYOUT = window.matchMedia("(max-width: 900px)");
 const enhancedHeroSelects = new Map<HTMLSelectElement, { refresh: () => void }>();
 
 let allTrips: Trip[] = [];
@@ -96,10 +97,104 @@ function scrollTripsIntoView(): void {
   document.getElementById("trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function closeMobileHeaderSearch(): void {
+  if (!MOBILE_HEADER_LAYOUT.matches) return;
+  const header = document.querySelector<HTMLElement>(".site-header");
+  const toggle = document.querySelector<HTMLButtonElement>("#headerSearchToggle");
+  const drawer = document.querySelector<HTMLElement>("#headerSearchDrawer");
+  header?.classList.remove("is-search-open");
+  toggle?.setAttribute("aria-expanded", "false");
+  drawer?.setAttribute("aria-hidden", "true");
+}
+
+function setupHeaderSearchToggle(): void {
+  const toggle = document.querySelector<HTMLButtonElement>("#headerSearchToggle");
+  const drawer = document.querySelector<HTMLElement>("#headerSearchDrawer");
+  const header = document.querySelector<HTMLElement>(".site-header");
+  if (!toggle || !drawer || !header) return;
+
+  const setOpen = (open: boolean): void => {
+    header.classList.toggle("is-search-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    drawer.setAttribute("aria-hidden", String(!open));
+    if (open) searchInput?.focus({ preventScroll: true });
+  };
+
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setOpen(!header.classList.contains("is-search-open"));
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!header.classList.contains("is-search-open")) return;
+    if (header.contains(e.target as Node)) return;
+    setOpen(false);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && header.classList.contains("is-search-open")) setOpen(false);
+  });
+}
+
 const TRAVEL_STYLE_SLUGS = new Set<string>(TRIP_STYLE_ORDER);
 
 /** Active vibe filter on home upcoming-trips chips. Empty string means "All vibes". */
 let activeStyleChip: TripStyleSlug | "" = "";
+
+type TripsFilterKind = "none" | "search" | "style" | "hero" | "single";
+
+let tripsFilter: { kind: TripsFilterKind; label: string } = { kind: "none", label: "" };
+
+function setTripsFilter(kind: TripsFilterKind, label: string): void {
+  tripsFilter = kind === "none" ? { kind: "none", label: "" } : { kind, label };
+  syncTripsFilterBar();
+}
+
+function syncTripsFilterBar(): void {
+  const bar = document.getElementById("tripsFilterBar");
+  const labelEl = document.getElementById("tripsFilterLabel");
+  if (!bar || !labelEl) return;
+  const show = tripsFilter.kind !== "none";
+  bar.hidden = !show;
+  if (show) labelEl.textContent = tripsFilter.label;
+}
+
+function clearAllTripFilters(opts?: { scroll?: boolean }): void {
+  setTripsFilter("none", "");
+  activeStyleChip = "";
+  clearSearchInputs();
+  clearHeroSearchInputs();
+  closeMobileHeaderSearch();
+  syncStyleChipUi();
+  renderTrips(allTrips);
+  if (opts?.scroll) scrollTripsIntoView();
+}
+
+function setupTripsFilterBar(): void {
+  document.getElementById("tripsFilterClear")?.addEventListener("click", () => {
+    clearAllTripFilters();
+  });
+}
+
+function updateTripsFilterFromResults(filtered: Trip[], searchTerm: string): void {
+  const t = searchTerm.trim();
+  if (t) {
+    if (filtered.length === 1) {
+      setTripsFilter("search", filtered[0].title);
+    } else if (filtered.length > 1) {
+      setTripsFilter("search", `${filtered.length} trips · “${t}”`);
+    } else {
+      setTripsFilter("search", `“${t}”`);
+    }
+    return;
+  }
+  if (activeStyleChip) {
+    const label = TRIP_STYLES[activeStyleChip]?.title ?? activeStyleChip;
+    setTripsFilter("style", label);
+    return;
+  }
+  setTripsFilter("none", "");
+}
 
 function syncStyleChipUi(): void {
   document.querySelectorAll<HTMLElement>("[data-style-chip]").forEach((chip) => {
@@ -619,6 +714,13 @@ function renderTripCard(trip: Trip): string {
     </div>`;
 }
 
+/** Keep in sync with `.hero-flipper` / `.hero-flipper-track` animation duration in styles.css */
+const HERO_FLIP_CYCLE_MS = 4500;
+const HERO_FLIP_STEP_MS = HERO_FLIP_CYCLE_MS / 2;
+/** Pause after each headline flip, then dissolve (match styles.css). */
+const HERO_PHOTO_DELAY_MS = 1000;
+const HERO_CROSSFADE_MS = 1500;
+
 function initTripsSwiper(): void {
   const SwiperCtor = window.Swiper;
   if (!SwiperCtor) {
@@ -629,12 +731,21 @@ function initTripsSwiper(): void {
     tripsSwiper.destroy(true, true);
     tripsSwiper = null;
   }
+  const slideCount = document.querySelectorAll(".tripsSwiper .swiper-slide").length;
+  const isMobile =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 768px)").matches;
+  const useLoop = slideCount >= 4;
   tripsSwiper = new SwiperCtor(".tripsSwiper", {
     slidesPerView: "auto",
     centeredSlides: true,
+    spaceBetween: isMobile ? 12 : 0,
     grabCursor: true,
-    rewind: true,
-    speed: 400,
+    loop: useLoop,
+    rewind: !useLoop,
+    loopAdditionalSlides: 1,
+    speed: 450,
+    watchSlidesProgress: false,
     followFinger: true,
     touchRatio: 1,
     touchAngle: 45,
@@ -643,11 +754,13 @@ function initTripsSwiper(): void {
     touchEventsTarget: "container",
     preventClicks: false,
     preventClicksPropagation: false,
-    autoplay: {
-      delay: 5500,
-      disableOnInteraction: false,
-      pauseOnMouseEnter: true,
-    },
+    autoplay: isMobile
+      ? false
+      : {
+          delay: 5500,
+          disableOnInteraction: false,
+          pauseOnMouseEnter: true,
+        },
     navigation: {
       nextEl: "#tripsNext",
       prevEl: "#tripsPrev",
@@ -899,6 +1012,7 @@ function applyTripSearch(term: string, opts?: { scroll?: boolean; commit?: boole
       : undefined;
   renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
   if (t && filtered.length > 0) syncStyleChipFromTrips(filtered);
+  updateTripsFilterFromResults(filtered, t);
   if (opts?.commit) clearSearchInputs();
   if (opts?.scroll) scrollTripsIntoView();
 }
@@ -910,8 +1024,10 @@ function filterTripsAndReveal(opts?: { scroll?: boolean; commit?: boolean }): vo
 function selectTripFromSearch(trip: Trip): void {
   activeStyleChip = (trip.tripStyle || "backpackers") as TripStyleSlug;
   syncStyleChipUi();
+  setTripsFilter("single", trip.title);
   renderTrips([trip]);
   clearSearchInputs();
+  closeMobileHeaderSearch();
   scrollTripsIntoView();
 }
 
@@ -1031,6 +1147,12 @@ function handleHeroFindTrips(): void {
     filtered.length === 0
       ? "No upcoming trips match those filters. Try another style or month."
       : undefined;
+  const parts: string[] = [];
+  if (style && TRAVEL_STYLE_SLUGS.has(style)) {
+    parts.push(TRIP_STYLES[style as TripStyleSlug]?.shortLabel ?? style);
+  }
+  if (month) parts.push(monthName(Number(month)));
+  setTripsFilter("hero", parts.join(" · ") || "Filtered trips");
   renderTrips(filtered, emptyHint ? { emptyHint } : undefined);
   clearHeroSearchInputs();
   scrollTripsIntoView();
@@ -1042,126 +1164,193 @@ function handleHeroFindTrips(): void {
  */
 function heroSlideImageUrl(slide: HTMLElement): string | null {
   const match = slide.style.backgroundImage.match(/url\(["']?([^"')]+)/i);
-  return match?.[1] ?? null;
+  if (!match?.[1]) return null;
+  try {
+    return new URL(match[1], window.location.href).href;
+  } catch {
+    return match[1];
+  }
 }
 
-async function preloadHeroSlides(slides: HTMLElement[]): Promise<void> {
-  await Promise.all(
+function prefetchHeroSlide(slide: HTMLElement | undefined): void {
+  if (!slide) return;
+  const src = heroSlideImageUrl(slide);
+  if (!src) return;
+  const img = new Image();
+  img.src = src;
+}
+
+async function tryLoadHeroImage(src: string): Promise<boolean> {
+  const img = new Image();
+  img.src = src;
+  try {
+    if (typeof img.decode === "function") {
+      await img.decode();
+      return true;
+    }
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("hero image failed"));
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function filterHeroSlidesWithImages(slides: HTMLElement[]): Promise<HTMLElement[]> {
+  const results = await Promise.all(
     slides.map(async (slide) => {
       const src = heroSlideImageUrl(slide);
-      if (!src) return;
-      const img = new Image();
-      img.src = src;
-      if (typeof img.decode === "function") {
-        try {
-          await img.decode();
-        } catch {
-          /* fall through */
-        }
-      } else {
-        await new Promise<void>((resolve) => {
-          img.onload = () => resolve();
-          img.onerror = () => resolve();
-        });
+      if (!src) {
+        slide.hidden = true;
+        return null;
       }
+      const ok = await tryLoadHeroImage(src);
+      if (!ok) {
+        logger.warn("[hero] skipping missing slide image:", src);
+        slide.hidden = true;
+        slide.classList.remove("is-active", "is-entering", "is-leaving");
+        return null;
+      }
+      return slide;
     }),
   );
+  return results.filter((slide): slide is HTMLElement => slide !== null);
 }
 
 function setupHeroSlideshow(): void {
   const hero = document.querySelector<HTMLElement>(".hero-cinematic");
-  const slides = Array.from(document.querySelectorAll<HTMLElement>(".hero-slideshow .hero-slide"));
-  if (!hero || !slides.length) return;
+  const allSlides = Array.from(document.querySelectorAll<HTMLElement>(".hero-slideshow .hero-slide"));
+  if (!hero || !allSlides.length) return;
 
   const prefersReducedMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  if (prefersReducedMotion) {
-    hero.classList.add("is-offscreen");
-    slides.forEach((slide, i) => {
-      slide.classList.toggle("is-active", i === 0);
-    });
-    return;
-  }
+  void (async () => {
+    const slides = await filterHeroSlidesWithImages(allSlides);
+    if (!slides.length) {
+      logger.warn("[hero] no slideshow images loaded");
+      return;
+    }
 
-  let index = slides.findIndex((slide) => slide.classList.contains("is-active"));
-  if (index < 0) index = 0;
-
-  slides.forEach((slide, i) => {
-    slide.classList.remove("is-entering", "is-leaving");
-    slide.classList.toggle("is-active", i === index);
-  });
-
-  const HOLD_MS = 4200;
-  let timer: number | undefined;
-  let visible = true;
-  let transitioning = false;
-
-  const finishLeave = (prev: HTMLElement): void => {
-    const current = slides[index];
-    prev.classList.remove("is-leaving", "is-active");
-    prev.removeEventListener("transitionend", onLeaveEnd);
-    current.classList.remove("is-entering");
-    current.classList.add("is-active");
-    transitioning = false;
-  };
-
-  const onLeaveEnd = (event: TransitionEvent): void => {
-    if (event.propertyName !== "opacity") return;
-    finishLeave(event.currentTarget as HTMLElement);
-  };
-
-  const crossfadeTo = (nextIndex: number): void => {
-    if (transitioning || nextIndex === index) return;
-    transitioning = true;
-
-    const prev = slides[index];
-    const next = slides[nextIndex];
-    index = nextIndex;
-
-    next.classList.remove("is-leaving");
-    next.classList.add("is-entering");
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        next.classList.add("is-active");
-        prev.classList.add("is-leaving");
-        prev.classList.remove("is-active");
+    if (prefersReducedMotion) {
+      hero.classList.add("is-offscreen");
+      slides.forEach((slide, i) => {
+        slide.classList.toggle("is-active", i === 0);
       });
+      return;
+    }
+
+    let index = slides.findIndex((slide) => slide.classList.contains("is-active"));
+    if (index < 0) index = 0;
+
+    slides.forEach((slide, i) => {
+      slide.classList.remove("is-entering", "is-leaving");
+      slide.classList.toggle("is-active", i === index);
     });
+    prefetchHeroSlide(slides[(index + 1) % slides.length]);
 
-    prev.addEventListener("transitionend", onLeaveEnd);
-    window.setTimeout(() => {
-      if (prev.classList.contains("is-leaving")) finishLeave(prev);
-    }, 800);
-  };
+    if (slides.length === 1) return;
 
-  const advance = (): void => {
-    if (!visible || transitioning) return;
-    crossfadeTo((index + 1) % slides.length);
-  };
+    /** Advance once per headline flip (“with us” ↔ “Or without us”), every 2.25s */
+    let timer: number | undefined;
+    let delayTimer: number | undefined;
+    let visible = true;
+    let transitioning = false;
 
-  void preloadHeroSlides(slides).then(() => {
-    timer = window.setInterval(advance, HOLD_MS);
-  });
+    const startSlideshow = (): void => {
+      if (timer !== undefined || slides.length < 2) return;
+      timer = window.setInterval(advance, HERO_FLIP_STEP_MS);
+    };
 
-  const observer = new IntersectionObserver(
-    ([entry]) => {
-      visible = Boolean(entry?.isIntersecting);
-      hero.classList.toggle("is-offscreen", !visible);
-    },
-    { root: null, threshold: 0, rootMargin: "0px" },
-  );
-  observer.observe(hero);
+    const stopSlideshow = (): void => {
+      if (timer !== undefined) {
+        window.clearInterval(timer);
+        timer = undefined;
+      }
+      if (delayTimer !== undefined) {
+        window.clearTimeout(delayTimer);
+        delayTimer = undefined;
+      }
+    };
 
-  window.addEventListener(
-    "pagehide",
-    () => {
-      if (timer !== undefined) window.clearInterval(timer);
-    },
-    { once: true },
-  );
+    const finishLeave = (prev: HTMLElement): void => {
+      const current = slides[index];
+      prev.classList.remove("is-leaving", "is-active");
+      prev.removeEventListener("transitionend", onLeaveEnd);
+      current.classList.remove("is-entering");
+      current.classList.add("is-active");
+      transitioning = false;
+    };
+
+    const onLeaveEnd = (event: TransitionEvent): void => {
+      if (event.propertyName !== "opacity") return;
+      finishLeave(event.currentTarget as HTMLElement);
+    };
+
+    const crossfadeTo = (nextIndex: number): void => {
+      if (transitioning || nextIndex === index) return;
+      transitioning = true;
+
+      const prev = slides[index];
+      const next = slides[nextIndex];
+      index = nextIndex;
+
+      prefetchHeroSlide(next);
+
+      next.classList.remove("is-leaving", "is-active");
+      prev.classList.remove("is-entering");
+      next.classList.add("is-entering");
+
+      /* Two frames: paint incoming slide at opacity 0, then dissolve up over outgoing. */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          next.classList.add("is-active");
+          prev.classList.add("is-leaving");
+          prev.classList.remove("is-active");
+        });
+      });
+
+      prev.addEventListener("transitionend", onLeaveEnd);
+      window.setTimeout(() => {
+        if (prev.classList.contains("is-leaving")) finishLeave(prev);
+      }, HERO_CROSSFADE_MS + 100);
+    };
+
+    const advance = (): void => {
+      if (!visible || transitioning) return;
+      const nextIndex = (index + 1) % slides.length;
+      prefetchHeroSlide(slides[nextIndex]);
+      if (delayTimer !== undefined) window.clearTimeout(delayTimer);
+      delayTimer = window.setTimeout(() => {
+        delayTimer = undefined;
+        if (!visible || transitioning) return;
+        crossfadeTo(nextIndex);
+      }, HERO_PHOTO_DELAY_MS);
+    };
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        visible = Boolean(entry?.isIntersecting);
+        hero.classList.toggle("is-offscreen", !visible);
+        if (visible) startSlideshow();
+        else stopSlideshow();
+      },
+      { root: null, threshold: 0, rootMargin: "0px" },
+    );
+    observer.observe(hero);
+    if (visible) startSlideshow();
+
+    window.addEventListener(
+      "pagehide",
+      () => {
+        stopSlideshow();
+      },
+      { once: true },
+    );
+  })();
 }
 
 function setupHeroAnimationPause(): void {
@@ -1200,6 +1389,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupStyleChipFilters();
   setupTripSort();
   setupNavTripsDropdown();
+  setupHeaderSearchToggle();
+  setupTripsFilterBar();
   populateHeroMonthOptions();
   setupHeroMobileSelects();
   syncStyleChipUi();
@@ -1212,11 +1403,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (e.key === "Enter") {
         e.preventDefault();
         filterTripsAndReveal({ scroll: true, commit: true });
+        closeMobileHeaderSearch();
       }
     });
   }
   if (searchButton) {
-    searchButton.addEventListener("click", () => filterTripsAndReveal({ scroll: true, commit: true }));
+    searchButton.addEventListener("click", () => {
+      filterTripsAndReveal({ scroll: true, commit: true });
+      closeMobileHeaderSearch();
+    });
   }
   if (planButton) planButton.addEventListener("click", handleHeroFindTrips);
   heroTravelStyleSelect?.addEventListener("change", () => {
