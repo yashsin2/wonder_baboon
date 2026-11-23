@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
+    "deploy:prepare": "npm run build && node ../deploy/stamp-version.mjs",
     "start": "npm run build && npx serve -l 3000"
   },
   "devDependencies": {

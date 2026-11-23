@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js";
+import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js?v=c001ef5";
 const statusEl = document.getElementById("authStatus");
 function showStatus(message, ok = false) {
     statusEl.textContent = message;

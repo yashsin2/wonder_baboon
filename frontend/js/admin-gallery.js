@@ -1,6 +1,6 @@
-import { API_BASE_URL, parseError } from "./config.js";
-import { inclusiveDays, prettyRange, wireDateRange } from "./date-range.js";
-import { districtFromTarget, districtName, eventToMapXY, getStateMapMeta, loadStateMapManifest, markDistricts, mountStateMap, projectLatLng, unprojectXY, } from "./state-maps.js";
+import { API_BASE_URL, parseError } from "./config.js?v=c001ef5";
+import { inclusiveDays, prettyRange, wireDateRange } from "./date-range.js?v=c001ef5";
+import { districtFromTarget, districtName, eventToMapXY, getStateMapMeta, loadStateMapManifest, markDistricts, mountStateMap, projectLatLng, unprojectXY, } from "./state-maps.js?v=c001ef5";
 let states = [];
 let mode = "browse";
 let activeStateId = "";
