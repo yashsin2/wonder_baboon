@@ -1,10 +1,10 @@
-import { API_BASE_URL, getSession, parseError, ROUTES } from "./config.js?v=c001ef5";
-import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js?v=c001ef5";
-import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js?v=c001ef5";
-import { adminAlert, animateCounts, initAdminUi, showToast } from "./admin-ui.js?v=c001ef5";
-import { initAdminTripForm } from "./admin-trip-form.js?v=c001ef5";
-import { wireDateRange } from "./date-range.js?v=c001ef5";
-import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js?v=c001ef5";
+import { API_BASE_URL, getSession, parseError, ROUTES } from "./config.js?v=dd3cea4";
+import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js?v=dd3cea4";
+import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js?v=dd3cea4";
+import { adminAlert, animateCounts, initAdminUi, showToast } from "./admin-ui.js?v=dd3cea4";
+import { initAdminTripForm } from "./admin-trip-form.js?v=dd3cea4";
+import { wireDateRange } from "./date-range.js?v=dd3cea4";
+import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js?v=dd3cea4";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "admin") {
     window.location.href = ROUTES.auth;

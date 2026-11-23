@@ -1,9 +1,9 @@
-import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js?v=c001ef5";
-import { API_BASE_URL, createWbModal, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js?v=c001ef5";
-import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js?v=c001ef5";
-import { bookingDateFieldHtml, bookingModalActionsHtml, collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js?v=c001ef5";
-import { fetchRazorpayConfig } from "./razorpay-checkout.js?v=c001ef5";
-import { normalizeTripStyle, renderStyleIntroHtml, TRIP_STYLE_ORDER, TRIP_STYLES, tripStyleSlugFromPath, } from "./trip-styles.js?v=c001ef5";
+import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js?v=dd3cea4";
+import { API_BASE_URL, createWbModal, getSession, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js?v=dd3cea4";
+import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js?v=dd3cea4";
+import { bookingDateFieldHtml, bookingModalActionsHtml, collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js?v=dd3cea4";
+import { fetchRazorpayConfig } from "./razorpay-checkout.js?v=dd3cea4";
+import { normalizeTripStyle, renderStyleIntroHtml, TRIP_STYLE_ORDER, TRIP_STYLES, tripStyleSlugFromPath, } from "./trip-styles.js?v=dd3cea4";
 const styleSlug = document.body.dataset.tripStyle ||
     tripStyleSlugFromPath(window.location.pathname) ||
     "backpackers";

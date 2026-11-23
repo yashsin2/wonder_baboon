@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 from auth_utils import (
@@ -31,7 +32,9 @@ from config import (
   PORT,
   RAZORPAY_ADVANCE_REFUND_DAYS,
   RAZORPAY_KEY_ID,
+  MEDIA_PUBLIC_ORIGIN,
   ROOT_DIR,
+  UPLOAD_DIR,
 )
 from logging_setup import configure_logging
 from models import (
@@ -493,7 +496,6 @@ if not IS_PRODUCTION:
     r"(:\d+)?$"  # optional port
   )
 
-app.add_middleware(CORSMiddleware, **_cors_kw)
 
 
 @app.middleware("http")
@@ -527,7 +529,7 @@ async def request_logger(request: Request, call_next):
   response.headers["X-Request-ID"] = rid
   for key, value in SECURITY_HEADERS.items():
     response.headers.setdefault(key, value)
-  if request.url.path.startswith("/api/") and request.url.path != "/api/trips" and request.url.path != "/api/travel-gallery":
+  if request.url.path.startswith("/api/") and request.url.path not in ("/api/trips", "/api/travel-gallery") and not request.url.path.startswith("/api/media/"):
     response.headers["Cache-Control"] = "no-store"  # never cache account / admin / payment responses
   logger.info(
     "%s %s -> %s in %.1fms (client=%s)",
@@ -544,6 +546,15 @@ async def request_logger(request: Request, call_next):
 @app.middleware("http")
 async def auth_rate_limit_layer(request: Request, call_next):
   return await auth_rate_limit_middleware(request, call_next)
+
+
+# Added last = outermost: even 413/429/500 answers built by the layers above carry CORS headers,
+# so the browser shows the real error instead of a bare "Failed to fetch".
+app.add_middleware(CORSMiddleware, **_cors_kw)
+
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Public, read-only photo files (no directory listing). Only validated images are ever written here.
+app.mount("/api/media", StaticFiles(directory=str(UPLOAD_DIR)), name="media")
 
 
 @app.exception_handler(RuntimeError)
@@ -1524,6 +1535,7 @@ async def admin_upload_gallery_visit_photos(
   state_id: str,
   place_id: str,
   visit_id: str,
+  request: Request,
   files: List[UploadFile] = File(...),
   _: dict = Depends(require_admin),
 ):
@@ -1537,7 +1549,10 @@ async def admin_upload_gallery_visit_photos(
 
   safe_state = re.sub(r"[^a-z0-9-]", "", state_id.strip().lower())
   safe_place = re.sub(r"[^a-z0-9-]", "", place_id.strip().lower())
-  folder = ROOT_DIR / "frontend" / "assets" / "gallery" / safe_state / safe_place
+  origin = MEDIA_PUBLIC_ORIGIN or str(request.base_url).rstrip("/")
+  if IS_PRODUCTION and origin.startswith("http://"):
+    origin = "https://" + origin[len("http://"):]
+  folder = UPLOAD_DIR / "gallery" / safe_state / safe_place
   saved: List[str] = []
   for file in files:
     original = (file.filename or "").strip()
@@ -1553,7 +1568,7 @@ async def admin_upload_gallery_visit_photos(
     filename = f"{stem}-{uuid.uuid4().hex[:8]}.{ext}"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / filename).write_bytes(data)
-    saved.append(f"/assets/gallery/{safe_state}/{safe_place}/{filename}")
+    saved.append(f"{origin}/api/media/gallery/{safe_state}/{safe_place}/{filename}")
 
   if not mongo_service.append_gallery_visit_photos(state_id, place_id, visit_id, saved):
     raise HTTPException(status_code=404, detail="visit not found")

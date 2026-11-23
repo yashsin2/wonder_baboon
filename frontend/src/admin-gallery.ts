@@ -85,7 +85,7 @@ type Draft = {
   endDate: string;
   travelers: string;
   story: string;
-  files: File[];
+  photoNames: string;
   error: string;
   busy: string;
   publishedTitle: string;
@@ -118,7 +118,7 @@ function blankDraft(): Draft {
     endDate: "",
     travelers: "",
     story: "",
-    files: [],
+    photoNames: "",
     error: "",
     busy: "",
     publishedTitle: "",
@@ -419,7 +419,6 @@ function render(): void {
   host.innerHTML = renderTopBar() + body;
   void hydrateMaps();
   if (mode === "wizard") {
-    attachWizardPreviews();
     wireWizardDates();
   } else {
     host.querySelectorAll<HTMLElement>("[data-visit]").forEach(wireTripCardDates);
@@ -548,10 +547,11 @@ function renderTrip(place: Place, trip: Trip): string {
     </div>
 
     <h5 class="gallery-sub">Photos</h5>
-    <div class="gallery-dropzone" data-dropzone>
-      <label class="btn-second gallery-upload-btn">+ Add photos
-        <input type="file" data-photo-input accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden /></label>
-      <span class="form-hint">Select many at once, or drop them here. Saved to this trip straight away. ★ sets the place cover.</span>
+    <div class="form-group">
+      <label>Add photos by file name</label>
+      <textarea data-photo-names rows="2" placeholder="jibhi-1.jpg, jibhi-2.jpg   (or one per line)"></textarea>
+      <small class="form-hint">Upload the pictures to your site's <b>assets</b> folder on Hostinger first (a sub-folder is fine, e.g. <code>Himachal/jibhi-1.jpg</code>), then type the names here. ★ sets the place cover.</small>
+      <button type="button" class="btn-second" data-action="add-photos">+ Add these photos</button>
     </div>
     <div class="gallery-thumbs" data-thumbs>${photos.map((p) => renderPhotoThumb(p, place.heroImage ?? "")).join("")}</div>
     <datalist id="${listId}" data-photo-list>${photos.map((p) => `<option value="${esc(p)}"></option>`).join("")}</datalist>
@@ -785,12 +785,11 @@ function wizStepTrip(): string {
       <textarea id="wizStory" rows="3" maxlength="1500" placeholder="A line or two about how it went…">${esc(draft.story)}</textarea></div></div>
 
     <h5 class="gallery-sub">Photos</h5>
-    <div class="gallery-dropzone" data-wiz-drop>
-      <label class="btn-second gallery-upload-btn">＋ Choose photos
-        <input type="file" id="wizFiles" accept="image/jpeg,image/png,image/webp,image/gif" multiple hidden /></label>
-      <span class="form-hint">${draft.files.length ? `${draft.files.length} selected` : "Select many at once, or drop them here."}</span>
-    </div>
-    <div class="gallery-thumbs" id="wizThumbs"></div>`;
+    <div class="form-group">
+      <label>Photo file names (optional)</label>
+      <textarea id="wizPhotos" rows="3" placeholder="jibhi-1.jpg, jibhi-2.jpg   (or one per line)">${esc(draft.photoNames)}</textarea>
+      <small class="form-hint">Upload the pictures to your site's <b>assets</b> folder on Hostinger first (a sub-folder is fine, e.g. <code>Himachal/jibhi-1.jpg</code>), then type the names here. We check each one exists before publishing.</small>
+    </div>`;
 }
 
 function renderWizardDone(): string {
@@ -809,19 +808,6 @@ function renderWizardDone(): string {
     </div>`;
 }
 
-function attachWizardPreviews(): void {
-  const thumbs = document.getElementById("wizThumbs");
-  if (!thumbs) return;
-  draft.files.forEach((f, i) => {
-    const url = URL.createObjectURL(f);
-    previewUrls.push(url);
-    thumbs.insertAdjacentHTML(
-      "beforeend",
-      `<figure class="gallery-thumb"><img src="${url}" alt="" /><button type="button" class="gallery-thumb-btn gallery-thumb-del" data-action="wiz-remove-file" data-index="${i}" title="Remove">✕</button></figure>`
-    );
-  });
-}
-
 /** Save whatever is typed on the current wizard step into the draft. */
 function captureWizardInputs(): void {
   const v = (id: string): string => (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null)?.value.trim() ?? "";
@@ -835,6 +821,7 @@ function captureWizardInputs(): void {
     draft.endDate = v("wizEnd");
     draft.travelers = v("wizTravelers");
     draft.story = v("wizStory");
+    draft.photoNames = v("wizPhotos");
   }
 }
 
@@ -908,6 +895,14 @@ async function wizardPublish(): Promise<void> {
     }
   };
   try {
+    setBusy("Checking photos…");
+    const checked = await checkPhotoNames(draft.photoNames);
+    if (checked.missing.length) {
+      draft.busy = "";
+      draft.error = `These photos weren't found on the site: ${checked.missing.join(", ")}. Upload them to the assets folder (or fix the name) and press Publish again.`;
+      render();
+      return;
+    }
     let placeId = draft.placeId;
     let placeName = st.places?.find((p) => p.id === placeId)?.name ?? "";
     if (placeId === "new") {
@@ -940,22 +935,16 @@ async function wizardPublish(): Promise<void> {
         : {}),
       travelers: Number(draft.travelers) || 0,
       story: draft.story,
+      ...(checked.ok.length ? { photos: checked.ok } : {}),
     });
     applyDestination(created.destination);
 
-    const BATCH = 8;
-    for (let i = 0; i < draft.files.length; i += BATCH) {
-      const chunk = draft.files.slice(i, i + BATCH);
-      setBusy(`Uploading photos ${Math.min(i + chunk.length, draft.files.length)} / ${draft.files.length}…`);
-      const data = await postPhotos(st.id, placeId, created.visit.id, chunk);
-      applyDestination(data.destination);
-    }
     draft.publishedTitle = `${draft.label}${placeName && !draft.label.includes(placeName) ? ` · ${placeName}` : ""}`;
     draft.publishedPlaceId = placeId;
     activeStateId = st.id;
     newTripId = created.visit.id;
     draft.busy = "";
-    draft.files = [];
+    draft.photoNames = "";
     await wizardGo(5);
   } catch (e) {
     draft.busy = "";
@@ -966,15 +955,45 @@ async function wizardPublish(): Promise<void> {
 
 /* ───────────── photos / API helpers ───────────── */
 
-async function postPhotos(stateId: string, placeId: string, tripId: string, files: File[]): Promise<{ paths: string[]; destination?: GalleryState }> {
-  const form = new FormData();
-  files.forEach((f) => form.append("files", f));
-  const res = await fetch(
-    `${API_BASE_URL}/admin/travel-gallery/${encodeURIComponent(stateId)}/places/${encodeURIComponent(placeId)}/visits/${encodeURIComponent(tripId)}/photos`,
-    { method: "POST", headers: { Authorization: `Bearer ${token()}` }, body: form }
-  );
-  if (!res.ok) throw new Error(await parseError(res));
-  return (await res.json()) as { paths: string[]; destination?: GalleryState };
+/** "jibhi-1.jpg" → "/assets/jibhi-1.jpg"; "Himachal/a.jpg" → "/assets/Himachal/a.jpg"; full http(s) URLs are kept. */
+function photoPathFromName(raw: string): string {
+  const t = raw.trim();
+  if (/^https?:\/\//i.test(t)) return t;
+  let path = t.replace(/^\.?\//, "").replace(/^assets\//i, "");
+  path = path.replace(/\.\.+\//g, "");
+  return `/assets/${path}`;
+}
+
+function parsePhotoNames(text: string): string[] {
+  const seen = new Set<string>();
+  text
+    .split(/[\n,;]+/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .forEach((n) => seen.add(photoPathFromName(n)));
+  return Array.from(seen);
+}
+
+function photoExists(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = window.setTimeout(() => resolve(false), 12000);
+    img.onload = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(false);
+    };
+    img.src = path;
+  });
+}
+
+async function checkPhotoNames(text: string): Promise<{ ok: string[]; missing: string[] }> {
+  const paths = parsePhotoNames(text);
+  const found = await Promise.all(paths.map(photoExists));
+  return { ok: paths.filter((_, i) => found[i]), missing: paths.filter((_, i) => !found[i]).map((p) => p.replace(/^\/assets\//, "")) };
 }
 
 async function run(task: () => Promise<void>): Promise<void> {
@@ -985,34 +1004,29 @@ async function run(task: () => Promise<void>): Promise<void> {
   }
 }
 
-async function uploadPhotos(card: HTMLElement, files: File[]): Promise<void> {
+async function addPhotosFromNames(card: HTMLElement): Promise<void> {
   const state = currentState();
   const place = currentPlace();
-  const tripId = card.dataset.visit;
-  if (!state || !place || !tripId || !files.length) return;
-  const images = files.filter((f) => f.type.startsWith("image/"));
-  if (!images.length) {
-    toast("Only image files can be uploaded.", true);
+  const box = card.querySelector<HTMLTextAreaElement>("[data-photo-names]");
+  if (!state || !place || !box) return;
+  const { ok, missing } = await checkPhotoNames(box.value);
+  if (!ok.length && !missing.length) {
+    toast("Type at least one photo file name first.", true);
     return;
   }
-  const BATCH = 10;
-  let done = 0;
-  await run(async () => {
-    for (let i = 0; i < images.length; i += BATCH) {
-      const chunk = images.slice(i, i + BATCH);
-      toast(`Uploading ${done + 1}–${done + chunk.length} of ${images.length}…`);
-      const data = await postPhotos(state.id, place.id, tripId, chunk);
-      const thumbs = card.querySelector("[data-thumbs]");
-      const list = card.querySelector("[data-photo-list]");
-      data.paths.forEach((p) => {
-        thumbs?.insertAdjacentHTML("beforeend", renderPhotoThumb(p, place.heroImage ?? ""));
-        list?.insertAdjacentHTML("beforeend", `<option value="${esc(p)}"></option>`);
-      });
-      applyDestination(data.destination);
-      done += chunk.length;
-    }
-    toast(`${done} photo${done === 1 ? "" : "s"} added.`);
+  const have = new Set(Array.from(card.querySelectorAll<HTMLElement>("[data-photo]")).map((el) => el.dataset.photo));
+  const fresh = ok.filter((p) => !have.has(p));
+  const thumbs = card.querySelector("[data-thumbs]");
+  const list = card.querySelector("[data-photo-list]");
+  fresh.forEach((p) => {
+    thumbs?.insertAdjacentHTML("beforeend", renderPhotoThumb(p, place.heroImage ?? ""));
+    list?.insertAdjacentHTML("beforeend", `<option value="${esc(p)}"></option>`);
   });
+  box.value = missing.join(", ");
+  if (missing.length) toast(`Not found on the site: ${missing.join(", ")}. Upload to assets/ or fix the name.`, true);
+  if (fresh.length) {
+    card.querySelector<HTMLElement>('[data-action="save-visit"]')?.click();
+  }
 }
 
 function field(card: HTMLElement, name: string): string {
@@ -1120,11 +1134,6 @@ async function handleClick(target: HTMLElement, event: MouseEvent): Promise<void
       captureWizardInputs();
       draft.placeId = btn.dataset.place ?? "";
       draft.error = "";
-      render();
-      break;
-    case "wiz-remove-file":
-      draft.files.splice(Number(btn.dataset.index), 1);
-      captureWizardInputs();
       render();
       break;
     case "wiz-add-state": {
@@ -1258,6 +1267,9 @@ async function handleClick(target: HTMLElement, event: MouseEvent): Promise<void
       btn.closest("[data-photo]")?.remove();
       toast("Photo removed from this trip — click “Save this trip” to confirm.");
       break;
+    case "add-photos":
+      if (card) await run(() => addPhotosFromNames(card));
+      break;
     case "make-cover": {
       const path = btn.closest<HTMLElement>("[data-photo]")?.dataset.photo;
       if (!state || !place || !path) return;
@@ -1318,49 +1330,13 @@ function bindOnce(host: HTMLElement): void {
 
   host.addEventListener("change", (event) => {
     const input = event.target as HTMLInputElement;
-    if (input.matches("[data-photo-input]")) {
-      const card = input.closest<HTMLElement>("[data-visit]");
-      const files = Array.from(input.files ?? []);
-      input.value = "";
-      if (card) void uploadPhotos(card, files);
-    } else if (input.id === "wizFiles") {
-      captureWizardInputs();
-      draft.files.push(...Array.from(input.files ?? []).filter((f) => f.type.startsWith("image/")));
-      input.value = "";
-      render();
-    } else if (input.id === "wizSkipPin") {
+    if (input.id === "wizSkipPin") {
       captureWizardInputs();
       if (draft.skipPin) draft.error = "";
     } else if (input.id === "gpDistrict") {
       pinDraft.districtId = (input as unknown as HTMLSelectElement).value;
       const mapHost = host.querySelector<HTMLElement>('[data-role="place-pin"]');
       if (mapHost) void hydrateMap(mapHost);
-    }
-  });
-
-  host.addEventListener("dragover", (event) => {
-    const zone = (event.target as HTMLElement).closest("[data-dropzone], [data-wiz-drop]");
-    if (!zone) return;
-    event.preventDefault();
-    zone.classList.add("is-over");
-  });
-  host.addEventListener("dragleave", (event) => {
-    (event.target as HTMLElement).closest("[data-dropzone], [data-wiz-drop]")?.classList.remove("is-over");
-  });
-  host.addEventListener("drop", (event) => {
-    const target = event.target as HTMLElement;
-    const zone = target.closest("[data-dropzone], [data-wiz-drop]");
-    if (!zone) return;
-    event.preventDefault();
-    zone.classList.remove("is-over");
-    const files = Array.from(event.dataTransfer?.files ?? []);
-    if (zone.hasAttribute("data-wiz-drop")) {
-      captureWizardInputs();
-      draft.files.push(...files.filter((f) => f.type.startsWith("image/")));
-      render();
-    } else {
-      const card = zone.closest<HTMLElement>("[data-visit]");
-      if (card) void uploadPhotos(card, files);
     }
   });
 

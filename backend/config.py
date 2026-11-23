@@ -41,6 +41,12 @@ if IS_PRODUCTION:
 # client IP from X-Forwarded-For without trusting values the visitor can forge. 0 = ignore the header.
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1" if IS_PRODUCTION else "0"))
 
+# Admin-uploaded photos live here and are served by the API at /api/media/... (the website itself is
+# hosted elsewhere, so files saved next to the API would otherwise never be reachable from the site).
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or (ROOT_DIR / "backend" / "uploads")).resolve()
+# Public origin of the API, e.g. https://api.wonderbaboon.com  (used to build photo URLs stored in the DB)
+MEDIA_PUBLIC_ORIGIN = (os.getenv("MEDIA_PUBLIC_ORIGIN") or "").strip().rstrip("/")
+
 PORT = int(os.getenv("PORT", "5051"))
 HOST = os.getenv("HOST", "0.0.0.0")
 

@@ -4,7 +4,7 @@
  * Defaults below are used when the API is offline. After admin edits in the
  * dashboard, data is loaded from GET /api/travel-gallery.
  */
-import { API_BASE_URL } from "./config.js?v=c001ef5";
+import { API_BASE_URL } from "./config.js?v=dd3cea4";
 const HIMACHAL = "/assets/Himachal";
 /** SVG viewBox 612×696. Nepal sits east of Uttarakhand, not in the empty Tibet band (y < 110). */
 export const GALLERY_MAP_PINS = {

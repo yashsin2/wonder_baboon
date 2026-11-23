@@ -1,4 +1,4 @@
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js?v=c001ef5";
+import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js?v=dd3cea4";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "user") {
     window.location.href = ROUTES.auth;
