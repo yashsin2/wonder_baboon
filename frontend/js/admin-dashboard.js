@@ -1,5 +1,9 @@
 import { API_BASE_URL, getSession, parseError, ROUTES } from "./config.js";
+import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js";
 import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js";
+import { adminAlert, animateCounts, initAdminUi, showToast } from "./admin-ui.js";
+import { initAdminTripForm } from "./admin-trip-form.js";
+import { wireDateRange } from "./date-range.js";
 import { normalizeTripStyle, TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "admin") {
@@ -181,11 +185,11 @@ async function deleteBookingById(bookingId) {
     if (!response.ok)
         throw new Error(await parseError(response));
 }
-async function addBookingMembers(bookingId, additionalTravelers) {
+async function addBookingMembers(bookingId, contacts) {
     const response = await fetch(`${API_BASE_URL}/admin/bookings/${encodeURIComponent(bookingId)}/members`, {
         method: "PATCH",
         headers: authHeaders,
-        body: JSON.stringify({ additional_travelers: additionalTravelers }),
+        body: JSON.stringify({ additional_contacts: contacts }),
     });
     if (!response.ok)
         throw new Error(await parseError(response));
@@ -195,7 +199,7 @@ function openAddMembersModal(booking) {
     const current = Number(booking.numberOfPeople ?? 1);
     const maxAdd = Math.max(0, 20 - current);
     if (maxAdd <= 0) {
-        window.alert("This booking already has the maximum of 20 travelers.");
+        adminAlert("This booking already has the maximum of 20 travelers.");
         return;
     }
     document.getElementById("bookingMembersModal")?.remove();
@@ -222,10 +226,8 @@ function openAddMembersModal(booking) {
         if (!namesEl || !countEl)
             return;
         const n = Math.min(maxAdd, Math.max(1, Number(countEl.value) || 1));
-        namesEl.innerHTML = Array.from({ length: n }, (_, i) => {
-            const num = current + i + 1;
-            return `<label>Traveler ${num} full name<input type="text" class="member-name-input" required minlength="2" /></label>`;
-        }).join("");
+        namesEl.innerHTML = extraTravelerBlocksHtml(n).replace(/Traveler (\d+)/g, (_, k) => `Traveler ${Number(k) + current - 1}`);
+        wireExtraTravelerMobiles(namesEl);
     };
     syncNames();
     countEl?.addEventListener("input", syncNames);
@@ -238,9 +240,9 @@ function openAddMembersModal(booking) {
     wrap.querySelector("#bookingMembersForm")?.addEventListener("submit", async (ev) => {
         ev.preventDefault();
         const submitBtn = wrap.querySelector("#bookingMembersSubmit");
-        const names = Array.from(wrap.querySelectorAll(".member-name-input")).map((el) => el.value.trim());
-        if (names.some((n) => n.length < 2)) {
-            window.alert("Each name must be at least 2 characters.");
+        const { contacts, error } = collectExtraTravelers(namesEl, namesEl.querySelectorAll("[data-extra-block]").length);
+        if (error) {
+            adminAlert(error);
             return;
         }
         const prevLabel = submitBtn?.textContent || "Save & notify";
@@ -249,13 +251,13 @@ function openAddMembersModal(booking) {
             submitBtn.textContent = "Sending…";
         }
         try {
-            await addBookingMembers(id, names);
+            await addBookingMembers(id, contacts);
             close();
             const [, bookings] = await Promise.all([loadStats(), fetchBookings(lastBookingSearch)]);
             renderBookingList(bookings);
         }
         catch (err) {
-            window.alert(err instanceof Error ? err.message : "Could not add travelers");
+            adminAlert(err instanceof Error ? err.message : "Could not add travelers");
             if (submitBtn) {
                 submitBtn.disabled = false;
                 submitBtn.textContent = prevLabel;
@@ -343,6 +345,7 @@ function openEditTripModal(trip) {
         <label>Price (₹)<input name="price" type="number" min="0" required value="${Number(trip.price)}" /></label>
         <label>Start date<input name="start_date" type="date" required value="${escapeHtml(String(trip.startDate || "").slice(0, 10))}" /></label>
         <label>End date<input name="end_date" type="date" required value="${escapeHtml(String((trip.endDate || trip.startDate) || "").slice(0, 10))}" /></label>
+        <div id="tripEditDates" class="atf-datesummary"></div>
         <label>Trip style<select name="trip_style" required>${tripStyleSelectOptions(trip.tripStyle)}</select></label>
         <label>Image file in assets/<input name="image_name" required value="${escapeHtml(imageFile)}" /></label>
         <label class="checkbox-row"><input name="published" type="checkbox" ${trip.published !== false ? "checked" : ""} /> Published (show on website)</label>
@@ -353,6 +356,16 @@ function openEditTripModal(trip) {
       </form>
     </div>`;
     document.body.appendChild(wrap);
+    const editForm = wrap.querySelector("#tripEditForm");
+    const startEl = editForm.querySelector('[name="start_date"]');
+    const endEl = editForm.querySelector('[name="end_date"]');
+    const durEl = editForm.querySelector('[name="duration_label"]');
+    if (startEl && endEl) {
+        // end can't be before start; typing in Duration keeps your own wording, otherwise it follows the dates
+        const dr = wireDateRange({ start: startEl, end: endEl, durationInput: durEl, startManual: true, summary: wrap.querySelector("#tripEditDates") });
+        startEl.addEventListener("change", () => dr.setDurationManual(false));
+        endEl.addEventListener("change", () => dr.setDurationManual(false));
+    }
     const close = () => wrap.remove();
     wrap.querySelector("#tripEditCancel")?.addEventListener("click", close);
     wrap.addEventListener("click", (e) => {
@@ -383,7 +396,7 @@ function openEditTripModal(trip) {
             await loadTrips(document.getElementById("tripSearchInput")?.value?.trim() || "");
         }
         catch (err) {
-            window.alert(err instanceof Error ? err.message : "Save failed");
+            adminAlert(err instanceof Error ? err.message : "Save failed");
         }
         finally {
             saveBtn.disabled = false;
@@ -549,33 +562,20 @@ async function loadStats() {
     const grid = document.getElementById("statsGrid");
     try {
         const data = (await fetchJson(`${API_BASE_URL}/admin/stats`));
-        const html = `
-      <div class="stat-card">
-        <h3>${data.totalTrips}</h3>
-        <p>Trips in catalogue</p>
-      </div>
-      <div class="stat-card">
-        <h3>${data.totalBookings}</h3>
-        <p>Total bookings</p>
-      </div>
-      <div class="stat-card">
-        <h3>${data.paidBookings ?? 0}</h3>
-        <p>Fully paid</p>
-      </div>
-      <div class="stat-card">
-        <h3>${data.advancePaidBookings ?? 0}</h3>
-        <p>Advance paid</p>
-      </div>
-      <div class="stat-card">
-        <h3>${data.unpaidBookings ?? 0}</h3>
-        <p>Unpaid / pending</p>
-      </div>
-      <div class="stat-card">
-        <h3>${data.monthBookings}</h3>
-        <p>Bookings this month</p>
-      </div>
-    `;
+        const card = (icon, value, label, tone) => `
+      <div class="stat-card stat-card--${tone}">
+        <span class="stat-ico" aria-hidden="true">${icon}</span>
+        <h3 data-count="${Number(value ?? 0)}">0</h3>
+        <p>${label}</p>
+      </div>`;
+        const html = card("🧭", data.totalTrips, "Trips in catalogue", "blue") +
+            card("🎟️", data.totalBookings, "Total bookings", "violet") +
+            card("✅", data.paidBookings, "Fully paid", "green") +
+            card("💸", data.advancePaidBookings, "Advance paid", "amber") +
+            card("⏳", data.unpaidBookings, "Unpaid / pending", "red") +
+            card("📅", data.monthBookings, "Bookings this month", "teal");
         grid.innerHTML = html;
+        animateCounts(grid);
         renderStatsCharts(data);
     }
     catch (error) {
@@ -754,6 +754,7 @@ document.getElementById("bookingSearchInput").addEventListener("keyup", (e) => {
         document.getElementById("bookingSearchBtn").click();
     }
 });
+initAdminTripForm();
 document.getElementById("tripForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const statusEl = document.getElementById("tripFormStatus");
@@ -787,6 +788,7 @@ document.getElementById("tripForm").addEventListener("submit", async (event) => 
         }
         statusEl.textContent = "Trip added successfully.";
         statusEl.className = "status-message success";
+        showToast("Trip added — it's live on the website.", "success");
         event.target.reset();
         if (pdfInput)
             pdfInput.value = "";
@@ -801,6 +803,7 @@ document.getElementById("tripForm").addEventListener("submit", async (event) => 
     catch (error) {
         statusEl.textContent = (error instanceof Error ? error.message : "Failed to add trip") || "Error";
         statusEl.className = "status-message error";
+        showToast(statusEl.textContent, "error", 6500);
     }
 });
 document.getElementById("bookingList").addEventListener("input", (e) => {
@@ -829,7 +832,7 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
                 renderRecentBookings(bookings);
         }
         catch (err) {
-            window.alert(err instanceof Error ? err.message : "Delete failed");
+            adminAlert(err instanceof Error ? err.message : "Delete failed");
         }
         return;
     }
@@ -866,7 +869,7 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
                 renderRecentBookings(bookings);
         }
         catch (err) {
-            window.alert(err instanceof Error ? err.message : "Could not mark full payment");
+            adminAlert(err instanceof Error ? err.message : "Could not mark full payment");
             markBtn.disabled = false;
             markBtn.textContent = prevLabel;
         }
@@ -886,12 +889,12 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
         const tripEl = panel?.querySelector("[data-trip-total]");
         trip_total_inr = tripEl ? parseRupeeField(tripEl.value) : undefined;
         if (trip_total_inr === undefined) {
-            window.alert("Enter the quoted package total in rupees (whole amounts only).");
+            adminAlert("Enter the quoted package total in rupees (whole amounts only).");
             return;
         }
     }
     if (advance === undefined) {
-        window.alert("Enter the advance payment received.");
+        adminAlert("Enter the advance payment received.");
         return;
     }
     const payload = { booking_id: id, advance_payment_inr: advance };
@@ -912,7 +915,7 @@ document.getElementById("bookingList").addEventListener("click", async (e) => {
         }
     }
     catch (err) {
-        window.alert(err instanceof Error ? err.message : "Could not confirm booking");
+        adminAlert(err instanceof Error ? err.message : "Could not confirm booking");
         trigger.disabled = false;
         trigger.textContent = prevConfirmLabel;
         if (panel instanceof HTMLElement)
@@ -944,7 +947,7 @@ document.getElementById("tripManageList")?.addEventListener("click", async (e) =
                 await loadStats();
             }
             catch (err) {
-                window.alert(err instanceof Error ? err.message : "Delete failed");
+                adminAlert(err instanceof Error ? err.message : "Delete failed");
             }
         }
         return;
@@ -958,7 +961,7 @@ document.getElementById("tripManageList")?.addEventListener("click", async (e) =
                 await loadTripManageList(lastTripManageSearch);
             }
             catch (err) {
-                window.alert(err instanceof Error ? err.message : "Could not clear itinerary");
+                adminAlert(err instanceof Error ? err.message : "Could not clear itinerary");
             }
         }
     }
@@ -977,7 +980,7 @@ document.getElementById("tripManageList")?.addEventListener("change", async (e) 
         await loadTripManageList(lastTripManageSearch);
     }
     catch (err) {
-        window.alert(err instanceof Error ? err.message : "Upload failed");
+        adminAlert(err instanceof Error ? err.message : "Upload failed");
     }
 });
 document.getElementById("adminTripManageSearchBtn")?.addEventListener("click", () => {
@@ -989,6 +992,7 @@ document.getElementById("adminTripManageSearch")?.addEventListener("keyup", (e) 
         document.getElementById("adminTripManageSearchBtn").click();
 });
 document.addEventListener("DOMContentLoaded", async () => {
+    initAdminUi(setActiveTab, String(user?.name ?? "").split(" ")[0] ?? "");
     initAdminGallery(authHeaders);
     await loadStats();
     try {

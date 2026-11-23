@@ -209,6 +209,7 @@ function normalizeDestination(raw) {
         testimonials: raw.testimonials ?? [],
         highlights: raw.highlights ?? [],
         videos: raw.videos ?? [],
+        places: (raw.places ?? []).map((p) => ({ ...p, visits: p.visits ?? [] })),
     };
 }
 /** Load gallery from API (admin-managed). Falls back to defaults on failure. */

@@ -16,6 +16,84 @@ export function guestBookingFieldsHtml() {
       <p class="bk-field-error" id="bk_email_err" role="alert" hidden></p>
     `;
 }
+function esc(raw) {
+    return raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+/** Date of travel: fixed to the trip's own date (shown, not editable). Falls back to a picker only if the trip has no date. */
+export function bookingDateFieldHtml(trip, minDate, fallbackDate) {
+    const iso = (trip.startDate || "").trim();
+    if (!iso) {
+        return `<label>Date of travel *</label>
+      <input id="bk_date" type="date" required value="${fallbackDate}" min="${minDate}" />`;
+    }
+    const pretty = new Date(`${iso}T00:00:00`).toLocaleDateString(undefined, {
+        weekday: "short",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+    });
+    return `<label>Date of travel</label>
+      <input id="bk_date" type="hidden" value="${esc(iso)}" />
+      <div class="bk-date-locked" aria-readonly="true">
+        <span class="bk-date-locked-value">📅 ${esc(pretty)}</span>
+        <span class="bk-date-locked-note">Fixed departure — set by the trip</span>
+      </div>`;
+}
+/** One block per additional traveler: name + mobile + email (so the trip shows up when they log in). */
+export function extraTravelerBlocksHtml(count) {
+    let html = "";
+    for (let i = 0; i < count; i++) {
+        html += `
+      <fieldset class="bk-extra-block" data-extra-block>
+        <legend>Traveler ${i + 2}</legend>
+        <label>Full name *</label>
+        <input type="text" class="bk-extra-name" required minlength="2" autocomplete="off" />
+        <label>Mobile *</label>
+        <div class="bk-mobile-wrap">
+          <span class="bk-mobile-prefix" aria-hidden="true">+91</span>
+          <input type="tel" class="bk-extra-mobile" required inputmode="numeric" placeholder="9876543210" maxlength="11" autocomplete="off" />
+        </div>
+        <label>Email *</label>
+        <input type="email" class="bk-extra-email" required placeholder="friend@example.com" autocomplete="off" />
+      </fieldset>`;
+    }
+    return html;
+}
+export function wireExtraTravelerMobiles(root) {
+    root.querySelectorAll(".bk-extra-mobile").forEach((el) => {
+        el.addEventListener("input", () => {
+            let d = el.value.replace(/\D/g, "");
+            if (d.startsWith("91") && d.length > 10)
+                d = d.slice(2);
+            if (d.length > 10)
+                d = d.slice(0, 10);
+            if (el.value !== d)
+                el.value = d;
+        });
+    });
+}
+/** Reads and validates every extra-traveler block inside `root`. Returns an error message when invalid. */
+export function collectExtraTravelers(root, needed) {
+    const blocks = Array.from(root.querySelectorAll("[data-extra-block]"));
+    if (blocks.length !== needed)
+        return { contacts: [], error: "Please fill in every additional traveler's details." };
+    const contacts = [];
+    for (let i = 0; i < blocks.length; i++) {
+        const b = blocks[i];
+        const name = b.querySelector(".bk-extra-name")?.value.trim() ?? "";
+        const mobile = normalizeIndianMobile(b.querySelector(".bk-extra-mobile")?.value ?? "");
+        const email = (b.querySelector(".bk-extra-email")?.value ?? "").trim().toLowerCase();
+        const label = `Traveler ${i + 2}`;
+        if (name.length < 2)
+            return { contacts: [], error: `${label}: please enter the full name.` };
+        if (!mobile)
+            return { contacts: [], error: `${label}: please enter a valid 10-digit mobile number.` };
+        if (!email || !isValidOptionalEmail(email))
+            return { contacts: [], error: `${label}: please enter a valid email address.` };
+        contacts.push({ name, mobile, email });
+    }
+    return { contacts };
+}
 export function bookingModalActionsHtml() {
     return `
       <div class="wb-modal-actions bk-modal-actions">
@@ -143,7 +221,7 @@ export function setupBookingPaymentUi(modal, onPay) {
 }
 export async function submitBookingAndPay(modal, trip, paymentKind, opts) {
     const { token, user } = getSession();
-    const { date, people, extraNames, isLoggedIn, onBusy, onIdle } = opts;
+    const { date, people, extras, isLoggedIn, onBusy, onIdle } = opts;
     onBusy?.("Booking…");
     try {
         const payCfg = await fetchRazorpayConfig();
@@ -157,7 +235,7 @@ export async function submitBookingAndPay(modal, trip, paymentKind, opts) {
                     trip_id: trip._id,
                     date_of_travel: date,
                     number_of_people: people,
-                    additional_travelers: extraNames,
+                    additional_contacts: extras,
                 }),
             });
             if (!res.ok)
@@ -182,7 +260,7 @@ export async function submitBookingAndPay(modal, trip, paymentKind, opts) {
                     mobile: guest.mobile,
                     email: guest.email || null,
                     number_of_people: people,
-                    additional_travelers: extraNames,
+                    additional_contacts: extras,
                 }),
             });
             if (!res.ok)

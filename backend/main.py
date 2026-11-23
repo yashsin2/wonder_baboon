@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from auth_utils import (
   create_pending_booking_token,
@@ -48,11 +49,14 @@ from models import (
   ProfileNameUpdateRequest,
   RazorpayCreateOrderRequest,
   RazorpayVerifyRequest,
-  TravelGalleryUpdateRequest,
+  TravelerContact,
+  TravelGalleryPlaceRequest,
+  TravelGalleryStateRequest,
+  TravelGalleryVisitRequest,
   UnifiedLoginRequest,
   UserSignupRequest,
 )
-from middleware.auth_rate_limit import auth_rate_limit_middleware
+from middleware.auth_rate_limit import auth_rate_limit_middleware, client_ip
 from services.email_service import email_service
 from services.itinerary_pdf import pdf_bytes_to_itinerary_html
 from services.mongo_service import mongo_service
@@ -79,6 +83,51 @@ if not JWT_SECRET:
 
 configure_logging()
 logger = logging.getLogger("wb.main")
+
+
+MAX_JSON_BODY = 1 * 1024 * 1024
+MAX_UPLOAD_BODY = 64 * 1024 * 1024
+SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+  "Cross-Origin-Resource-Policy": "same-site",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+}
+if IS_PRODUCTION:
+  SECURITY_HEADERS["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+
+def _public_payment_error(error: Exception, fallback: str) -> str:
+  """Gateway/config error text is for the server log; visitors only get a neutral message."""
+  return fallback if IS_PRODUCTION else (str(error) or fallback)
+
+
+_login_failures: Dict[str, List[float]] = {}
+_login_failures_lock = threading.Lock()
+LOGIN_FAIL_MAX = 8
+LOGIN_FAIL_WINDOW = 15 * 60
+
+
+def _login_locked(identifier: str) -> bool:
+  now = time.monotonic()
+  with _login_failures_lock:
+    hits = [t for t in _login_failures.get(identifier, []) if t > now - LOGIN_FAIL_WINDOW]
+    _login_failures[identifier] = hits
+    return len(hits) >= LOGIN_FAIL_MAX
+
+
+def _login_failed(identifier: str) -> None:
+  with _login_failures_lock:
+    if len(_login_failures) > 20000:
+      _login_failures.clear()
+    _login_failures.setdefault(identifier, []).append(time.monotonic())
+
+
+def _login_ok(identifier: str) -> None:
+  with _login_failures_lock:
+    _login_failures.pop(identifier, None)
 
 
 def _inr_label(amount: int) -> str:
@@ -227,8 +276,16 @@ def _admin_mark_booking_fully_paid(booking_id: str) -> Dict[str, Any]:
   }
 
 
-def _traveler_document_fields(primary_name: str, additional: List[str]) -> Dict[str, Any]:
-  """Ordered travelers + traveler1..travelerN for storage and emails."""
+def _traveler_document_fields(
+  primary_name: str,
+  additional: List[str],
+  contacts: Optional[List[Dict[str, str]]] = None,
+) -> Dict[str, Any]:
+  """Ordered travelers + traveler1..travelerN for storage and emails.
+
+  `contacts` are the additional travelers' {name, mobile, email}; stored as travelerContacts so each
+  of them sees this trip once they log in with that email / mobile.
+  """
   primary = sanitize_text(str(primary_name).strip(), "full_name")
   names: List[str] = [primary]
   for extra in additional:
@@ -237,7 +294,17 @@ def _traveler_document_fields(primary_name: str, additional: List[str]) -> Dict[
   for i, nm in enumerate(names, start=1):
     if i <= 20:
       out[f"traveler{i}"] = nm
+  if contacts is not None:
+    out["travelerContacts"] = [
+      {"name": c["name"], "mobile": c["mobile"], "email": str(c["email"]).strip().lower()} for c in contacts
+    ]
   return out
+
+
+def _locked_travel_date(trip: Optional[dict], requested: str) -> str:
+  """Catalogue trips run on the trip's own start date; travelers cannot pick another one."""
+  fixed = str((trip or {}).get("startDate") or "").strip()
+  return fixed or requested
 
 
 def _traveler_inbox_email(booking_doc: Dict[str, Any]) -> str:
@@ -326,9 +393,10 @@ def _booking_belongs_to_user(booking: dict, email: str, mobile: Optional[str]) -
 
 def _apply_booking_member_update(
   booking_id: str,
-  additional_travelers: List[str],
+  additional_contacts: List[Dict[str, str]],
   triggered_by: str,
 ) -> Dict[str, Any]:
+  additional_travelers = [c["name"] for c in additional_contacts]
   booking = mongo_service.find_booking_by_id(booking_id)
   if not booking:
     raise HTTPException(status_code=404, detail="booking not found")
@@ -360,7 +428,8 @@ def _apply_booking_member_update(
   primary = existing[0]
   prior_extras = existing[1:]
   all_extras = prior_extras + additional_travelers
-  tfields = _traveler_document_fields(primary, all_extras)
+  prior_contacts = [c for c in (booking.get("travelerContacts") or []) if isinstance(c, dict)]
+  tfields = _traveler_document_fields(primary, all_extras, prior_contacts + additional_contacts)
 
   updated = mongo_service.update_booking_members(
     booking_id,
@@ -398,7 +467,13 @@ def _apply_booking_member_update(
   }
 
 
-app = FastAPI(title="Wonder Baboon API")
+# Interactive docs / OpenAPI schema list every route (incl. admin) — never expose them in production.
+app = FastAPI(
+  title="Wonder Baboon API",
+  docs_url=None if IS_PRODUCTION else "/docs",
+  redoc_url=None if IS_PRODUCTION else "/redoc",
+  openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 
 _cors_kw: Dict[str, Any] = dict(
   allow_origins=CORS_ORIGINS,
@@ -423,8 +498,16 @@ app.add_middleware(CORSMiddleware, **_cors_kw)
 
 @app.middleware("http")
 async def request_logger(request: Request, call_next):
-  rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+  rid = re.sub(r"[^A-Za-z0-9_-]", "", request.headers.get("x-request-id") or "")[:32] or uuid.uuid4().hex[:12]
   request.state.request_id = rid
+  # Reject oversized bodies early (uploads get a larger, route-specific ceiling).
+  try:
+    declared = int(request.headers.get("content-length") or 0)
+  except ValueError:
+    declared = 0
+  limit = MAX_UPLOAD_BODY if "/itinerary" in request.url.path or request.url.path.endswith("/photos") else MAX_JSON_BODY
+  if declared > limit:
+    return JSONResponse(status_code=413, content={"detail": "request too large"})
   start = time.perf_counter()
   log_extra = {"request_id": rid}
   try:
@@ -442,6 +525,10 @@ async def request_logger(request: Request, call_next):
     return JSONResponse(status_code=500, content={"detail": "internal server error"})
   duration_ms = (time.perf_counter() - start) * 1000
   response.headers["X-Request-ID"] = rid
+  for key, value in SECURITY_HEADERS.items():
+    response.headers.setdefault(key, value)
+  if request.url.path.startswith("/api/") and request.url.path != "/api/trips" and request.url.path != "/api/travel-gallery":
+    response.headers["Cache-Control"] = "no-store"  # never cache account / admin / payment responses
   logger.info(
     "%s %s -> %s in %.1fms (client=%s)",
     request.method,
@@ -505,7 +592,7 @@ def admin_run_trip_completion_emails(_: dict = Depends(require_admin)):
 
 @app.get("/api/health")
 def health():
-  return {"ok": True, "mongo": mongo_service.is_connected()}
+  return {"ok": True}
 
 
 @app.post("/api/auth/signup")
@@ -532,14 +619,20 @@ def signup(payload: UserSignupRequest):
 
 
 @app.post("/api/auth/login")
-def login(payload: UnifiedLoginRequest):
+def login(payload: UnifiedLoginRequest, request: Request):
   identifier = payload.identifier.strip()
+  # per (visitor, account): stops guessing without letting a stranger lock the real owner out
+  lock_key = f"{client_ip(request)}|{identifier.lower()}"
+  if _login_locked(lock_key):
+    raise HTTPException(status_code=429, detail="too many failed attempts; try again in 15 minutes")
   if "@" in identifier:
     email = identifier.lower()
     user = mongo_service.find_user_by_email(email)
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
+      _login_failed(lock_key)
       logger.info("login failed email=%s", email)
       raise HTTPException(status_code=401, detail="invalid credentials")
+    _login_ok(lock_key)
     token = create_token({"role": "user", "email": user["email"]})
     logger.info("login success email=%s", email)
     return {"token": token, "user": {"role": "user", "email": user["email"], "name": user.get("name", "")}}
@@ -547,6 +640,7 @@ def login(payload: UnifiedLoginRequest):
   username = sanitize_text(identifier, "username")
   admin = mongo_service.find_admin(username)
   if not admin:
+    _login_failed(lock_key)
     logger.info("admin login failed username=%s", username)
     raise HTTPException(status_code=401, detail="invalid credentials")
   if admin.get("password_hash"):
@@ -554,9 +648,11 @@ def login(payload: UnifiedLoginRequest):
   else:
     valid = hmac.compare_digest(payload.password, str(admin.get("password", "")))
   if not valid:
+    _login_failed(lock_key)
     logger.info("admin login bad password username=%s", username)
     raise HTTPException(status_code=401, detail="invalid credentials")
 
+  _login_ok(lock_key)
   token = create_token({"role": "admin", "username": username})
   logger.info("admin login success username=%s", username)
   return {"token": token, "user": {"role": "admin", "username": username}}
@@ -631,16 +727,16 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
       logger.error("create-order RazorpayAuthError pending: %s", error)
       raise HTTPException(
         status_code=401,
-        detail=(
-          "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env "
-          "(Test mode keys from Dashboard → Account & Settings → API Keys), then restart the API."
+        detail=_public_payment_error(
+          error,
+          "Online payment is temporarily unavailable. Please try again shortly or contact us.",
         ),
       ) from error
     except (RazorpayOrderError, ValueError) as error:
       logger.error("create-order order error pending: %s", error, exc_info=True)
       raise HTTPException(
         status_code=500,
-        detail=str(error) or "Could not create Razorpay order",
+        detail=_public_payment_error(error, "Could not create the payment order. Please try again."),
       ) from error
     order_id = str(order.get("id") or "").strip()
     if not order_id:
@@ -714,16 +810,16 @@ def razorpay_create_order_endpoint(payload: RazorpayCreateOrderRequest):
     logger.error("create-order RazorpayAuthError booking=%s: %s", bid, error)
     raise HTTPException(
       status_code=401,
-      detail=(
-        "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env "
-        "(Test mode keys from Dashboard → Account & Settings → API Keys), then restart the API."
+      detail=_public_payment_error(
+        error,
+        "Online payment is temporarily unavailable. Please try again shortly or contact us.",
       ),
     ) from error
   except (RazorpayOrderError, ValueError) as error:
     logger.error("create-order order error booking=%s: %s", bid, error, exc_info=True)
     raise HTTPException(
       status_code=500,
-      detail=str(error) or "Could not create Razorpay order",
+      detail=_public_payment_error(error, "Could not create the payment order. Please try again."),
     ) from error
   order_id = str(order.get("id") or "").strip()
   if not order_id:
@@ -954,12 +1050,17 @@ def api_verify_payment_alias(payload: RazorpayVerifyRequest):
 
 @app.post("/api/bookings/guest")
 def guest_booking(payload: GuestBookingRequest):
-  tfields = _traveler_document_fields(payload.full_name, payload.additional_travelers)
+  tfields = _traveler_document_fields(
+    payload.full_name,
+    payload.additional_travelers,
+    [c.model_dump() for c in payload.additional_contacts],
+  )
+  trip = mongo_service.find_trip_by_id(payload.trip_id)
   doc = {
     "tripType": "defined_trip",
     "tripId": payload.trip_id,
     "travelDestination": payload.travel_destination,
-    "dateOfTravel": payload.date_of_travel,
+    "dateOfTravel": _locked_travel_date(trip, payload.date_of_travel),
     "fullName": payload.full_name,
     "mobile": payload.mobile,
     "email": payload.email,
@@ -986,7 +1087,7 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
   if not user:
     raise HTTPException(status_code=404, detail="user not found")
 
-  date_of_travel = str(payload.get("date_of_travel") or trip.get("startDate") or "").strip()
+  date_of_travel = _locked_travel_date(trip, str(payload.get("date_of_travel") or "").strip())
   if not date_of_travel:
     raise HTTPException(status_code=400, detail="date of travel is required")
   try:
@@ -1003,27 +1104,29 @@ def user_booking(payload: dict, authorization: Optional[str] = Header(default=No
   if people < 1 or people > 20:
     raise HTTPException(status_code=400, detail="number of people must be between 1 and 20")
 
-  raw_extras = payload.get("additional_travelers") or []
-  if not isinstance(raw_extras, list):
-    raw_extras = []
-  extras: List[str] = []
-  for x in raw_extras[:19]:
-    s = str(x).strip()
-    if s:
-      extras.append(sanitize_text(s, "full_name"))
+  raw_contacts = payload.get("additional_contacts") or []
+  if not isinstance(raw_contacts, list):
+    raw_contacts = []
   need = people - 1
-  if len(extras) != need:
+  try:
+    contacts = [TravelerContact(**c).model_dump() for c in raw_contacts[:19] if isinstance(c, dict)]
+  except ValidationError as exc:
+    first = exc.errors()[0]
+    where = ".".join(str(x) for x in first.get("loc", ()))
+    raise HTTPException(status_code=400, detail=f"Traveler details invalid ({where}): {first.get('msg', 'invalid')}")
+  if len(contacts) != need:
     raise HTTPException(
       status_code=400,
-      detail=f"Provide exactly {need} additional traveler name(s) for {people} people.",
+      detail=f"Provide name, mobile and email for each of the {need} additional traveler(s).",
     )
+  extras = [c["name"] for c in contacts]
   lead_name = str(user.get("name") or "").strip()
   if people > 1 and len(lead_name) < 2:
     raise HTTPException(
       status_code=400,
       detail="Add your full name in Settings before booking for more than one person.",
     )
-  tfields = _traveler_document_fields(lead_name or "Traveler", extras)
+  tfields = _traveler_document_fields(lead_name or "Traveler", extras, contacts)
 
   doc = {
     "tripType": "defined_trip",
@@ -1107,7 +1210,7 @@ def user_add_booking_members(
       detail="This booking is fully paid. Contact Wonder Baboon to add more travelers.",
     )
 
-  return _apply_booking_member_update(booking_id, payload.additional_travelers, "user")
+  return _apply_booking_member_update(booking_id, [c.model_dump() for c in payload.additional_contacts], "user")
 
 
 @app.post("/api/user/profile/email-otp/request")
@@ -1243,7 +1346,7 @@ def admin_add_booking_members(
   payload: AddMembersRequest,
   _: dict = Depends(require_admin),
 ):
-  return _apply_booking_member_update(booking_id, payload.additional_travelers, "admin")
+  return _apply_booking_member_update(booking_id, [c.model_dump() for c in payload.additional_contacts], "admin")
 
 
 @app.get("/api/admin/trips")
@@ -1291,6 +1394,8 @@ async def admin_upload_trip_itinerary(
   data = await file.read()
   if len(data) > 5 * 1024 * 1024:
     raise HTTPException(status_code=400, detail="PDF must be 5MB or smaller")
+  if not data.startswith(b"%PDF-"):
+    raise HTTPException(status_code=400, detail="That file is not a valid PDF")
   try:
     html_fragment = pdf_bytes_to_itinerary_html(data)
   except ValueError as exc:
@@ -1307,20 +1412,24 @@ def admin_clear_trip_itinerary(trip_id: str, _: dict = Depends(require_admin)):
   return {"message": "custom itinerary removed"}
 
 
-def _gallery_update_fields(payload: TravelGalleryUpdateRequest) -> Dict[str, Any]:
-  raw = payload.model_dump(exclude_unset=True)
-  key_map = {
-    "trip_label": "tripLabel",
-    "trip_meta": "tripMeta",
-    "pin_subtitle": "pinSubtitle",
-    "photo_count_label": "photoCountLabel",
-    "hero_image": "heroImage",
-    "reel_url": "reelUrl",
-  }
-  out: Dict[str, Any] = {}
-  for key, value in raw.items():
-    out[key_map.get(key, key)] = value
-  return out
+GALLERY_IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
+
+
+def _looks_like_image(data: bytes, ext: str) -> bool:
+  """Check the file's magic bytes, so a renamed script/HTML/SVG can't be stored as a photo."""
+  if ext in {"jpg", "jpeg"}:
+    return data[:3] == b"\xff\xd8\xff"
+  if ext == "png":
+    return data[:8] == b"\x89PNG\r\n\x1a\n"
+  if ext == "gif":
+    return data[:6] in (b"GIF87a", b"GIF89a")
+  if ext == "webp":
+    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+  return False
+
+
+def _gallery_fields(payload) -> Dict[str, Any]:
+  return payload.model_dump(exclude_unset=True)
 
 
 @app.get("/api/travel-gallery")
@@ -1333,62 +1442,126 @@ def admin_travel_gallery(_: dict = Depends(require_admin)):
   return {"destinations": mongo_service.list_travel_gallery()}
 
 
-@app.get("/api/admin/travel-gallery/{dest_id}")
-def admin_travel_gallery_one(dest_id: str, _: dict = Depends(require_admin)):
-  dest = mongo_service.find_travel_gallery_by_id(dest_id)
+@app.get("/api/admin/travel-gallery/{state_id}")
+def admin_travel_gallery_one(state_id: str, _: dict = Depends(require_admin)):
+  dest = mongo_service.find_travel_gallery_by_id(state_id)
   if not dest:
-    raise HTTPException(status_code=404, detail="destination not found")
+    raise HTTPException(status_code=404, detail="state not found")
   return {"destination": dest}
 
 
-@app.put("/api/admin/travel-gallery/{dest_id}")
-def admin_update_travel_gallery(
-  dest_id: str,
-  payload: TravelGalleryUpdateRequest,
+@app.post("/api/admin/travel-gallery")
+def admin_create_gallery_state(payload: TravelGalleryStateRequest, _: dict = Depends(require_admin)):
+  if not payload.state:
+    raise HTTPException(status_code=400, detail="state name is required")
+  created = mongo_service.create_gallery_state(_gallery_fields(payload))
+  if not created:
+    raise HTTPException(status_code=409, detail="that state already exists")
+  return {"message": "state added", "destination": created}
+
+
+@app.put("/api/admin/travel-gallery/{state_id}")
+def admin_update_gallery_state(state_id: str, payload: TravelGalleryStateRequest, _: dict = Depends(require_admin)):
+  if not mongo_service.update_gallery_state(state_id, _gallery_fields(payload)):
+    raise HTTPException(status_code=404, detail="state not found")
+  return {"message": "state updated", "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.post("/api/admin/travel-gallery/{state_id}/places")
+def admin_add_gallery_place(state_id: str, payload: TravelGalleryPlaceRequest, _: dict = Depends(require_admin)):
+  if not payload.name:
+    raise HTTPException(status_code=400, detail="place name is required")
+  place = mongo_service.add_gallery_place(state_id, _gallery_fields(payload))
+  if not place:
+    raise HTTPException(status_code=404, detail="state not found")
+  return {"message": "place added", "place": place, "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.put("/api/admin/travel-gallery/{state_id}/places/{place_id}")
+def admin_update_gallery_place(
+  state_id: str, place_id: str, payload: TravelGalleryPlaceRequest, _: dict = Depends(require_admin)
+):
+  if not mongo_service.update_gallery_place(state_id, place_id, _gallery_fields(payload)):
+    raise HTTPException(status_code=404, detail="place not found")
+  return {"message": "place updated", "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.delete("/api/admin/travel-gallery/{state_id}/places/{place_id}")
+def admin_delete_gallery_place(state_id: str, place_id: str, _: dict = Depends(require_admin)):
+  if not mongo_service.delete_gallery_place(state_id, place_id):
+    raise HTTPException(status_code=404, detail="place not found")
+  return {"message": "place deleted", "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.post("/api/admin/travel-gallery/{state_id}/places/{place_id}/visits")
+def admin_add_gallery_visit(
+  state_id: str, place_id: str, payload: TravelGalleryVisitRequest, _: dict = Depends(require_admin)
+):
+  visit = mongo_service.add_gallery_visit(state_id, place_id, _gallery_fields(payload))
+  if not visit:
+    raise HTTPException(status_code=404, detail="place not found")
+  return {"message": "visit added", "visit": visit, "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.put("/api/admin/travel-gallery/{state_id}/places/{place_id}/visits/{visit_id}")
+def admin_update_gallery_visit(
+  state_id: str, place_id: str, visit_id: str, payload: TravelGalleryVisitRequest, _: dict = Depends(require_admin)
+):
+  if not mongo_service.update_gallery_visit(state_id, place_id, visit_id, _gallery_fields(payload)):
+    raise HTTPException(status_code=404, detail="visit not found")
+  return {"message": "visit updated", "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.delete("/api/admin/travel-gallery/{state_id}/places/{place_id}/visits/{visit_id}")
+def admin_delete_gallery_visit(state_id: str, place_id: str, visit_id: str, _: dict = Depends(require_admin)):
+  if not mongo_service.delete_gallery_visit(state_id, place_id, visit_id):
+    raise HTTPException(status_code=404, detail="visit not found")
+  return {"message": "visit deleted", "destination": mongo_service.find_travel_gallery_by_id(state_id)}
+
+
+@app.post("/api/admin/travel-gallery/{state_id}/places/{place_id}/visits/{visit_id}/photos")
+async def admin_upload_gallery_visit_photos(
+  state_id: str,
+  place_id: str,
+  visit_id: str,
+  files: List[UploadFile] = File(...),
   _: dict = Depends(require_admin),
 ):
-  fields = _gallery_update_fields(payload)
-  if not mongo_service.update_travel_gallery(dest_id, fields):
-    raise HTTPException(status_code=404, detail="destination not found")
-  dest = mongo_service.find_travel_gallery_by_id(dest_id)
-  return {"message": "travel gallery updated", "destination": dest}
+  """Upload one or many photos straight into a visit (they are saved to the visit immediately)."""
+  dest = mongo_service.find_travel_gallery_by_id(state_id)
+  place = next((p for p in (dest or {}).get("places", []) if p.get("id") == place_id), None)
+  if not place or not any(v.get("id") == visit_id for v in place.get("visits", [])):
+    raise HTTPException(status_code=404, detail="visit not found")
+  if len(files) > 30:
+    raise HTTPException(status_code=400, detail="Upload up to 30 photos at a time")
 
+  safe_state = re.sub(r"[^a-z0-9-]", "", state_id.strip().lower())
+  safe_place = re.sub(r"[^a-z0-9-]", "", place_id.strip().lower())
+  folder = ROOT_DIR / "frontend" / "assets" / "gallery" / safe_state / safe_place
+  saved: List[str] = []
+  for file in files:
+    original = (file.filename or "").strip()
+    ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
+    if ext not in GALLERY_IMAGE_EXTS:
+      raise HTTPException(status_code=400, detail=f"{original or 'file'}: upload JPG, PNG, WEBP or GIF")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+      raise HTTPException(status_code=400, detail=f"{original}: image must be 8MB or smaller")
+    if not _looks_like_image(data, ext):
+      raise HTTPException(status_code=400, detail=f"{original}: file is not a valid {ext.upper()} image")
+    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", original.rsplit(".", 1)[0])[:48] or "photo"
+    filename = f"{stem}-{uuid.uuid4().hex[:8]}.{ext}"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / filename).write_bytes(data)
+    saved.append(f"/assets/gallery/{safe_state}/{safe_place}/{filename}")
 
-@app.post("/api/admin/travel-gallery/{dest_id}/photos")
-async def admin_upload_travel_gallery_photo(
-  dest_id: str,
-  file: UploadFile = File(...),
-  _: dict = Depends(require_admin),
-):
-  dest = mongo_service.find_travel_gallery_by_id(dest_id)
-  if not dest:
-    raise HTTPException(status_code=404, detail="destination not found")
-
-  original = (file.filename or "").strip()
-  if not original:
-    raise HTTPException(status_code=400, detail="Choose a photo file to upload")
-  ext = original.rsplit(".", 1)[-1].lower() if "." in original else ""
-  if ext not in {"jpg", "jpeg", "png", "webp", "gif"}:
-    raise HTTPException(status_code=400, detail="Upload a JPG, PNG, WEBP, or GIF image")
-
-  data = await file.read()
-  if len(data) > 8 * 1024 * 1024:
-    raise HTTPException(status_code=400, detail="Image must be 8MB or smaller")
-
-  safe_dest = re.sub(r"[^a-z0-9-]", "", dest_id.strip().lower())
-  stem = re.sub(r"[^a-zA-Z0-9._-]", "_", original.rsplit(".", 1)[0])[:48] or "photo"
-  filename = f"{stem}-{uuid.uuid4().hex[:8]}.{ext}"
-  folder = ROOT_DIR / "frontend" / "assets" / "gallery" / safe_dest
-  folder.mkdir(parents=True, exist_ok=True)
-  target = folder / filename
-  target.write_bytes(data)
-
-  photo_path = f"/assets/gallery/{safe_dest}/{filename}"
-  if not mongo_service.append_travel_gallery_photo(safe_dest, photo_path):
-    raise HTTPException(status_code=404, detail="destination not found")
-
-  refreshed = mongo_service.find_travel_gallery_by_id(safe_dest)
-  return {"message": "photo uploaded", "path": photo_path, "destination": refreshed}
+  if not mongo_service.append_gallery_visit_photos(state_id, place_id, visit_id, saved):
+    raise HTTPException(status_code=404, detail="visit not found")
+  return {
+    "message": f"{len(saved)} photo(s) uploaded",
+    "paths": saved,
+    "destination": mongo_service.find_travel_gallery_by_id(state_id),
+  }
 
 
 if __name__ == "__main__":

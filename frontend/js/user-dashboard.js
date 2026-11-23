@@ -110,7 +110,7 @@ async function loadUserBookings() {
     catch (error) {
         const message = error instanceof Error ? error.message : "Failed to load bookings";
         document.getElementById("upcomingTrips").innerHTML =
-            `<p style='text-align:center;color:#ffb3b3;'>${message}</p>`;
+            `<p style='text-align:center;color:#ffb3b3;'>${escape(message)}</p>`;
     }
 }
 document.addEventListener("DOMContentLoaded", () => {

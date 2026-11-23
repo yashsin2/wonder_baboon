@@ -89,6 +89,8 @@ export interface Booking {
   mobile?: string;
   email?: string;
   tripId?: string;
+  /** "companion" = you were added as an additional traveler on someone else's booking */
+  viewerRole?: "owner" | "companion";
   /** Lead + additional travelers in order (when stored by newer bookings) */
   travelers?: string[];
   /** Copied from packaged trip when tripId is set and trip has custom itinerary */

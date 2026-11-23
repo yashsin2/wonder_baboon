@@ -1,0 +1,94 @@
+{
+  "site": {
+    "origin": "https://wonderbaboon.com",
+    "name": "Wonder Baboon",
+    "legalName": "Wonder Baboon PVT Ltd",
+    "email": "baboonwonder@gmail.com",
+    "telephone": "+91-91515-84677",
+    "address": {
+      "locality": "Lucknow",
+      "region": "Uttar Pradesh",
+      "country": "IN"
+    },
+    "sameAs": [
+      "https://instagram.com/wonder.baboon"
+    ],
+    "ogImage": "/assets/lake.jpg",
+    "ogImageAlt": "A calm mountain lake — Wonder Baboon group trips across India",
+    "logo": "/wb-favicon-192.png"
+  },
+  "pages": {
+    "index": {
+      "path": "/",
+      "title": "Wonder Baboon: Group Trips, Backpacking & Treks in India",
+      "description": "Curated group trips across India: backpacking, motorcycle rides, treks and slow travel. See upcoming dates and prices, and book online with Wonder Baboon.",
+      "kind": "home"
+    },
+    "previous-adventures": {
+      "path": "/previous-adventures",
+      "title": "Travel Gallery: Trip Photos & Stories | Wonder Baboon",
+      "description": "Explore an interactive map of India with district-wise places, trip photos, traveler reviews and stories from every Wonder Baboon group trip.",
+      "kind": "collection",
+      "crumb": "Travel Gallery"
+    },
+    "backpackers": {
+      "path": "/backpackers",
+      "title": "Backpacking Trips in India | Wonder Baboon",
+      "description": "Budget-friendly backpacking group trips across India: shared rides, hostel stays, street food and offbeat routes. View upcoming Backpackers trips and book.",
+      "kind": "collection",
+      "crumb": "The Backpackers"
+    },
+    "motorcycle-diaries": {
+      "path": "/motorcycle-diaries",
+      "title": "Motorcycle Trips in India | Wonder Baboon",
+      "description": "Group motorcycle expeditions across India: mountain passes, open highways and campfire nights. View upcoming Motorcycle Diaries rides and book.",
+      "kind": "collection",
+      "crumb": "The Motorcycle Diaries"
+    },
+    "dolce-far-niente": {
+      "path": "/dolce-far-niente",
+      "title": "Slow Travel Getaways in India | Wonder Baboon",
+      "description": "Slow, restful group getaways in India: unhurried mornings, riverside chai and sunsets without alarms. View upcoming Dolce far niente trips and book.",
+      "kind": "collection",
+      "crumb": "Dolce far niente"
+    },
+    "hikers": {
+      "path": "/hikers",
+      "title": "Trekking & Hiking Trips in India | Wonder Baboon",
+      "description": "Guided group treks in India: mountain trails, alpine camps and ridge walks. View upcoming Hikers trips with dates and prices, and book online.",
+      "kind": "collection",
+      "crumb": "The Hikers"
+    },
+    "upcoming-trips": {
+      "title": "Your Trips | Wonder Baboon",
+      "description": "Your upcoming Wonder Baboon trips.",
+      "private": true
+    },
+    "previous-trips": {
+      "title": "Your Past Bookings | Wonder Baboon",
+      "description": "Your past Wonder Baboon bookings.",
+      "private": true
+    },
+    "settings": {
+      "title": "Account Settings | Wonder Baboon",
+      "description": "Manage your Wonder Baboon account.",
+      "private": true
+    },
+    "auth": {
+      "title": "Log in or Sign up | Wonder Baboon",
+      "description": "Log in or create your Wonder Baboon account.",
+      "private": true
+    },
+    "user-dashboard": {
+      "title": "Your Trips | Wonder Baboon",
+      "description": "Your Wonder Baboon trips.",
+      "private": true
+    },
+    "admin-dashboard": {
+      "title": "Admin Dashboard | Wonder Baboon",
+      "description": "Wonder Baboon admin console.",
+      "private": true,
+      "nofollow": true
+    }
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "name": "Wonder Baboon",
+  "name": "Wonder Baboon — Group Trips in India",
   "short_name": "Wonder Baboon",
   "icons": [
     {
@@ -15,5 +15,9 @@
   ],
   "theme_color": "#ffffff",
   "background_color": "#ffffff",
-  "display": "standalone"
+  "display": "standalone",
+  "description": "Curated group trips across India: backpacking, motorcycle rides, treks and slow travel.",
+  "start_url": "/",
+  "scope": "/",
+  "lang": "en-IN"
 }

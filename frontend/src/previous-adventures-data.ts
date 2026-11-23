@@ -32,6 +32,37 @@ export interface AdventureItineraryDay {
   items: string[];
 }
 
+export interface AdventureVisit {
+  id: string;
+  label?: string;
+  visitedOn?: string;
+  dates?: string;
+  travelers?: number;
+  days?: number;
+  tripMeta?: string;
+  story?: string;
+  reelUrl?: string;
+  photos?: string[];
+  highlights?: AdventureHighlight[];
+  testimonials?: AdventureTestimonial[];
+}
+
+/** A place inside a state (Jibhi, Spiti…). Visiting again adds another entry to `visits`. */
+export interface AdventurePlace {
+  id: string;
+  name: string;
+  tagline?: string;
+  description?: string;
+  heroImage?: string;
+  /** District id from assets/maps/manifest.json (e.g. "kullu") and a friendlier sub-area ("Banjar Valley") */
+  districtId?: string;
+  districtName?: string;
+  area?: string;
+  lat?: number;
+  lng?: number;
+  visits: AdventureVisit[];
+}
+
 export interface AdventureDestination {
   id: string;
   state: string;
@@ -59,6 +90,8 @@ export interface AdventureDestination {
   videos?: AdventureVideo[];
   /** Instagram / YouTube reel — opens in new tab when set */
   reelUrl?: string;
+  /** Places visited in this state (from the admin Travel Gallery) */
+  places?: AdventurePlace[];
 }
 
 const HIMACHAL = "/assets/Himachal";
@@ -276,6 +309,7 @@ function normalizeDestination(raw: AdventureDestination): AdventureDestination {
     testimonials: raw.testimonials ?? [],
     highlights: raw.highlights ?? [],
     videos: raw.videos ?? [],
+    places: (raw.places ?? []).map((p) => ({ ...p, visits: p.visits ?? [] })),
   };
 }
 

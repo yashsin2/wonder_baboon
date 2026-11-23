@@ -1,8 +1,8 @@
+# Wonder Baboon — crawl rules
 User-agent: *
 Allow: /
+Disallow: /admin-dashboard
 
-User-agent: Googlebot
-Allow: /
+# Private/account pages carry <meta name="robots" content="noindex"> (not blocked here, so crawlers can read that tag).
 
-User-agent: Googlebot-Image
-Allow: /
+Sitemap: https://wonderbaboon.com/sitemap.xml

@@ -1,3 +1,4 @@
+import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js";
 import {
   API_BASE_URL,
   Booking,
@@ -86,7 +87,8 @@ function userCanAddMembers(booking: Booking): boolean {
 }
 
 function openBookingDetailModal(booking: Booking, options?: { allowAddMembers?: boolean }): void {
-  const allowAddMembers = (options?.allowAddMembers ?? false) && userCanAddMembers(booking);
+  const allowAddMembers =
+    (options?.allowAddMembers ?? false) && booking.viewerRole !== "companion" && userCanAddMembers(booking);
   const dest = escapeHtml(String(booking.travelDestination ?? ""));
   const pay =
     booking.payment === "paid"
@@ -103,6 +105,10 @@ function openBookingDetailModal(booking: Booking, options?: { allowAddMembers?: 
     names.length > 0
       ? `<ol class="booking-detail-travelers">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ol>`
       : `<p class="muted">No traveler list on file for this booking.</p>`;
+  const companionNote =
+    booking.viewerRole === "companion"
+      ? `<p class="booking-companion-note">You're travelling on this trip — ${escapeHtml(booking.fullName || "your friend")} booked it for the group.</p>`
+      : "";
   const itineraryBlock = bookingItinerarySectionHtml(booking);
   const maxAdd = Math.max(0, 20 - Number(booking.numberOfPeople || 1));
   const addMembersBtn =
@@ -161,6 +167,7 @@ function openBookingDetailModal(booking: Booking, options?: { allowAddMembers?: 
             }
           </div>
         </div>
+        ${companionNote}
         <div class="booking-detail-names-block">
           <h4>Traveler names</h4>
           ${travelersHtml}
@@ -221,10 +228,8 @@ function openAddMembersModal(booking: Booking): void {
   const countEl = wrap.querySelector("#userAddCount") as HTMLInputElement;
   const syncNames = (): void => {
     const n = Math.min(maxAdd, Math.max(1, Number(countEl.value) || 1));
-    namesEl.innerHTML = Array.from({ length: n }, (_, i) => {
-      const num = current + i + 1;
-      return `<label>Traveler ${num} full name</label><input type="text" class="user-member-name" required minlength="2" />`;
-    }).join("");
+    namesEl.innerHTML = extraTravelerBlocksHtml(n).replace(/Traveler (\d+)/g, (_, k) => `Traveler ${Number(k) + current - 1}`);
+    wireExtraTravelerMobiles(namesEl);
   };
   syncNames();
   countEl.addEventListener("input", syncNames);
@@ -238,17 +243,15 @@ function openAddMembersModal(booking: Booking): void {
 
   wrap.querySelector("#userAddMembersForm")?.addEventListener("submit", async (ev) => {
     ev.preventDefault();
-    const names = Array.from(wrap.querySelectorAll<HTMLInputElement>(".user-member-name")).map((el) =>
-      el.value.trim()
-    );
-    if (names.some((n) => n.length < 2)) {
-      showMessagePopup("Each name must be at least 2 characters.", "error");
+    const { contacts, error } = collectExtraTravelers(namesEl, namesEl.querySelectorAll("[data-extra-block]").length);
+    if (error) {
+      showMessagePopup(error, "error");
       return;
     }
     try {
       const res = await apiFetch(`/user/bookings/${encodeURIComponent(booking._id)}/members`, {
         method: "PATCH",
-        body: JSON.stringify({ additional_travelers: names }),
+        body: JSON.stringify({ additional_contacts: contacts }),
       });
       if (!res.ok) throw new Error(await parseError(res));
       close();
@@ -350,7 +353,7 @@ async function mountBookingsPage(kind: "upcoming" | "previous"): Promise<void> {
     );
   } catch (error) {
     logger.error("mountBookingsPage", error);
-    list.innerHTML = `<div class="route-empty"><p>${error instanceof Error ? error.message : "Failed to load bookings"}</p></div>`;
+    list.innerHTML = `<div class="route-empty"><p>${escapeHtml(error instanceof Error ? error.message : "Failed to load bookings")}</p></div>`;
   }
 }
 
@@ -360,14 +363,14 @@ function settingsForm(profile: ProfileResponse): string {
       <div class="up-setting">
         <label>Full name</label>
         <div class="up-row">
-          <input id="settingName" type="text" value="${profile.name || ""}" />
+          <input id="settingName" type="text" value="${escapeHtml(profile.name || "")}" />
           <button id="saveName" type="button" class="up-btn">Save</button>
         </div>
       </div>
       <div class="up-setting">
         <label>Email</label>
         <div class="up-row">
-          <input id="settingEmail" type="email" value="${profile.email || ""}" />
+          <input id="settingEmail" type="email" value="${escapeHtml(profile.email || "")}" />
           <button id="changeEmail" type="button" class="up-btn">Change</button>
         </div>
         <small class="muted">An OTP will be sent to the new email.</small>
@@ -375,7 +378,7 @@ function settingsForm(profile: ProfileResponse): string {
       <div class="up-setting">
         <label>Mobile</label>
         <div class="up-row">
-          <input id="settingMobile" type="tel" value="${profile.mobile || ""}" />
+          <input id="settingMobile" type="tel" value="${escapeHtml(profile.mobile || "")}" />
           <button id="changeMobile" type="button" class="up-btn">Change</button>
         </div>
         <small class="muted">An OTP will be sent to your registered email.</small>
@@ -407,7 +410,7 @@ async function mountSettingsPage(): Promise<void> {
     });
   } catch (error) {
     logger.error("mountSettingsPage", error);
-    body.innerHTML = `<div class="route-empty"><p>${error instanceof Error ? error.message : "Failed to load profile"}</p></div>`;
+    body.innerHTML = `<div class="route-empty"><p>${escapeHtml(error instanceof Error ? error.message : "Failed to load profile")}</p></div>`;
   }
 }
 
@@ -467,7 +470,7 @@ function promptOtp(kind: "email" | "mobile", newValue: string): void {
   wrap.innerHTML = `
     <div class="wb-modal-card">
       <h3>Enter verification code</h3>
-      <p class="muted">We sent a 6-digit code to ${kind === "email" ? `<strong>${newValue}</strong>` : "your registered email"}.</p>
+      <p class="muted">We sent a 6-digit code to ${kind === "email" ? `<strong>${escapeHtml(newValue)}</strong>` : "your registered email"}.</p>
       <input id="otpCodeInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="••••••" />
       <div class="wb-modal-actions">
         <button id="otpCancel" type="button" class="wb-cancel">Cancel</button>

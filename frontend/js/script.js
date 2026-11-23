@@ -1,6 +1,7 @@
+import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js";
 import { API_BASE_URL, attachSmoothScroll, createWbModal, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
-import { bookingModalActionsHtml, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js";
+import { bookingDateFieldHtml, bookingModalActionsHtml, collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js";
 import { mountHomePreviousTravels } from "./home-previous-travels.js";
 import { fetchRazorpayConfig } from "./razorpay-checkout.js";
 import { TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
@@ -362,11 +363,10 @@ function openBookingModal(trip) {
     const minDate = todayIso();
     const guestFields = isLoggedIn ? "" : guestBookingFieldsHtml();
     const body = `
-    <p class="muted">${trip.title} · ${trip.location} · ${trip.durationLabel}</p>
+    <p class="muted">${escapeHtml(trip.title)} · ${escapeHtml(trip.location)} · ${escapeHtml(trip.durationLabel)}</p>
     <form id="bk_form" novalidate>
       ${guestFields}
-      <label>Date of travel *</label>
-      <input id="bk_date" type="date" required value="${defaultDate}" min="${minDate}" />
+      ${bookingDateFieldHtml(trip, minDate, defaultDate)}
       <label>Number of people *</label>
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
       <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
@@ -385,15 +385,8 @@ function openBookingModal(trip) {
         const n = Number(peopleEl.value);
         const count = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 1;
         const needExtras = Math.max(0, count - 1);
-        extrasWrap.innerHTML = "";
-        if (needExtras === 0)
-            return;
-        let html = "";
-        for (let i = 0; i < needExtras; i++) {
-            const num = i + 2;
-            html += `<label>Traveler ${num} full name *</label><input type="text" class="bk-extra-traveler" required minlength="2" autocomplete="name" />`;
-        }
-        extrasWrap.innerHTML = html;
+        extrasWrap.innerHTML = extraTravelerBlocksHtml(needExtras);
+        wireExtraTravelerMobiles(extrasWrap);
     };
     syncBookingExtras();
     peopleEl?.addEventListener("input", syncBookingExtras);
@@ -410,13 +403,9 @@ function openBookingModal(trip) {
             return;
         }
         const needExtras = Math.max(0, Math.min(19, people - 1));
-        const extraNames = Array.from(modal.querySelectorAll(".bk-extra-traveler")).map((el) => el.value.trim());
-        if (extraNames.length !== needExtras) {
-            showMessagePopup("Please fill every additional traveler's name.", "error");
-            return;
-        }
-        if (needExtras > 0 && extraNames.some((s) => s.length < 2)) {
-            showMessagePopup("Each traveler's name must be at least 2 characters.", "error");
+        const { contacts: extras, error: extrasError } = collectExtraTravelers(modal, needExtras);
+        if (extrasError) {
+            showMessagePopup(extrasError, "error");
             return;
         }
         if (!isLoggedIn && !validateGuestBookingFields(modal).ok)
@@ -450,7 +439,7 @@ function openBookingModal(trip) {
         void submitBookingAndPay(modal, trip, paymentKind, {
             date,
             people,
-            extraNames,
+            extras,
             isLoggedIn,
             token,
             onBusy: setBusy,
@@ -856,6 +845,7 @@ async function loadTrips() {
         if (!response.ok)
             throw new Error(await parseError(response, payload));
         allTrips = (payload.trips || []).filter(isUpcomingTrip);
+        setJsonLd("ld-trips", tripsToJsonLd(allTrips, `${SITE_ORIGIN}/#trips`, "Upcoming Wonder Baboon group trips"));
         syncStyleChipUi();
         filterTripsAndReveal();
         populateNavTripsDropdown();

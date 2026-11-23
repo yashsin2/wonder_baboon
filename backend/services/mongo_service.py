@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import certifi
 from bson import ObjectId
@@ -13,7 +14,7 @@ from pymongo.database import Database
 from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from auth_utils import hash_password
-from config import ADMIN_PASSWORD, ADMIN_USERNAME, MONGO_URI, ROOT_DIR
+from config import ADMIN_PASSWORD, ADMIN_USERNAME, MONGO_URI, ROOT_DIR, TRAVEL_GALLERY_COLLECTION
 from models import TRIP_STYLE_SLUGS
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ class MongoService:
 
   @property
   def travel_gallery_collection(self) -> Collection:
-    return self.db["travel_gallery"]
+    return self.db[TRAVEL_GALLERY_COLLECTION]
 
   def seed_defaults(self) -> None:
     self.admin_collection.create_index([("username", ASCENDING)], unique=True)
@@ -114,6 +115,8 @@ class MongoService:
     self.add_trip_collection.create_index([("slug", ASCENDING)], unique=True)
     self.user_trip_collection.create_index([("createdAt", DESCENDING)])
     self.user_trip_collection.create_index([("email", ASCENDING)])
+    self.user_trip_collection.create_index([("travelerContacts.email", ASCENDING)])
+    self.user_trip_collection.create_index([("travelerContacts.mobile", ASCENDING)])
     self.otp_collection.create_index([("userEmail", ASCENDING), ("kind", ASCENDING)])
     self.otp_collection.create_index([("createdAt", DESCENDING)])
     self.otp_collection.create_index([("expiresAt", ASCENDING)], expireAfterSeconds=0)
@@ -122,8 +125,7 @@ class MongoService:
     logger.info("Mongo indexes ensured")
 
     self.backfill_booking_payment()
-    self._seed_travel_gallery_if_empty()
-    self._sync_travel_gallery_from_seed()
+    self._init_travel_gallery()
 
     if not self.admin_collection.find_one({"username": ADMIN_USERNAME}):
       self.admin_collection.insert_one(
@@ -681,10 +683,15 @@ class MongoService:
     return False
 
   def list_user_bookings(self, email: str, mobile: Optional[str] = None) -> List[dict]:
-    clauses: List[Dict[str, Any]] = [{"email": email}]
+    """Bookings the user owns, plus bookings where they were added as an additional traveler."""
+    email_l = (email or "").strip().lower()
     m = (mobile or "").strip()
+    clauses: List[Dict[str, Any]] = [{"email": email}]
+    if email_l:
+      clauses.append({"travelerContacts.email": email_l})
     if m:
       clauses.append({"mobile": m})
+      clauses.append({"travelerContacts.mobile": m})
     query: Dict[str, Any] = {"$or": clauses} if len(clauses) > 1 else clauses[0]
     bookings = list(self.user_trip_collection.find(query).sort("dateOfTravel", DESCENDING))
     visible: List[dict] = []
@@ -693,6 +700,16 @@ class MongoService:
       self._sync_booking_payment_status(booking)
       if not self.booking_visible_to_traveler(booking):
         continue
+      is_owner = (str(booking.get("email") or "").strip().lower() == email_l and email_l) or (
+        m and str(booking.get("mobile") or "").strip() == m
+      )
+      if is_owner:
+        booking["viewerRole"] = "owner"
+      else:
+        # Companion: can see the trip, but not the lead's or other travelers' contact details.
+        booking["viewerRole"] = "companion"
+        for key in ("email", "mobile", "travelerContacts"):
+          booking.pop(key, None)
       tid = booking.get("tripId")
       if tid:
         trip = self.find_trip_by_id(str(tid))
@@ -730,7 +747,7 @@ class MongoService:
   def search_bookings(self, search: str) -> List[dict]:
     query: dict = {}
     if search.strip():
-      term = search.strip()
+      term = re.escape(search.strip()[:80])
       query = {
         "$or": [
           {"travelDestination": {"$regex": term, "$options": "i"}},
@@ -751,7 +768,7 @@ class MongoService:
   def search_trips(self, search: str) -> List[dict]:
     query: dict = {}
     if search.strip():
-      query = {"title": {"$regex": search.strip(), "$options": "i"}}
+      query = {"title": {"$regex": re.escape(search.strip()[:80]), "$options": "i"}}
     trips = list(self.add_trip_collection.find(query).sort("createdAt", DESCENDING))
     for trip in trips:
       self._serialize_trip(trip)
@@ -871,6 +888,10 @@ class MongoService:
       refreshed["_id"] = str(refreshed["_id"])
     return refreshed
 
+  # ── Travel Gallery: State → Places → Visits ───────────────────────────────
+  # One document per state. `places` is an array; each place has an array of `visits`
+  # (one per trip), so going to Jibhi twice just adds a second visit to the same place.
+
   def _load_travel_gallery_seed(self) -> List[dict]:
     seed_path = ROOT_DIR / "backend" / "data" / "travel_gallery_seed.json"
     if not seed_path.is_file():
@@ -885,57 +906,147 @@ class MongoService:
       return []
     return [item for item in raw if isinstance(item, dict) and item.get("id")]
 
-  def _seed_travel_gallery_if_empty(self) -> None:
-    if self.travel_gallery_collection.count_documents({}) > 0:
-      return
-    seed_items = self._load_travel_gallery_seed()
-    if not seed_items:
-      return
-    now = datetime.utcnow()
-    docs = [{**item, "createdAt": now, "updatedAt": now} for item in seed_items]
-    self.travel_gallery_collection.insert_many(docs)
-    logger.info("Seeded %s travel gallery destinations", len(docs))
+  @staticmethod
+  def _slugify(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", (value or "").strip().lower()).strip("-")[:48]
 
-  def _sync_travel_gallery_from_seed(self) -> None:
-    """Keep map pins & new destinations aligned with travel_gallery_seed.json."""
-    seed_items = self._load_travel_gallery_seed()
-    if not seed_items:
-      return
-    now = datetime.utcnow()
-    synced = 0
-    inserted = 0
-    for item in seed_items:
-      dest_id = str(item["id"])
-      existing = self.travel_gallery_collection.find_one({"id": dest_id})
-      if existing:
-        patch = {
-          "mapPin": item.get("mapPin"),
-          "sortOrder": item.get("sortOrder", 0),
-          "state": item.get("state"),
-          "title": item.get("title", item.get("state")),
-          "status": item.get("status"),
-          "pinSubtitle": item.get("pinSubtitle"),
-          "svgStateId": item.get("svgStateId"),
-          "heroImage": item.get("heroImage"),
-          "updatedAt": now,
+  @classmethod
+  def _legacy_state_to_places(cls, item: dict) -> dict:
+    """Convert an old one-trip-per-state document into State → Places → Visits."""
+    if isinstance(item.get("places"), list):
+      return item
+    out = {
+      key: item[key]
+      for key in ("id", "state", "svgStateId", "mapPin", "status", "pinSubtitle", "heroImage", "sortOrder")
+      if key in item
+    }
+    out["title"] = item.get("title") or item.get("state")
+    out["places"] = []
+    has_content = item.get("photos") or item.get("testimonials") or item.get("highlights") or item.get("story")
+    if has_content:
+      label = (item.get("tripLabel") or "").strip()
+      name = re.sub(r"\s+(backpacking\s+)?(trip|tour)$", "", label, flags=re.IGNORECASE).strip() or item.get("state", "")
+      photos = list(item.get("photos") or [])
+      out["places"].append(
+        {
+          "id": cls._slugify(name) or "place",
+          "name": name,
+          "tagline": label,
+          "description": "",
+          "heroImage": item.get("heroImage") or (photos[0] if photos else ""),
+          **cls._KNOWN_PLACES.get((item.get("id"), cls._slugify(name)), {}),
+          "visits": [
+            {
+              "id": uuid4().hex[:10],
+              "label": label or name,
+              "visitedOn": "",
+              "dates": item.get("dates", ""),
+              "travelers": item.get("travelers", 0),
+              "days": item.get("days", 0),
+              "tripMeta": item.get("tripMeta", ""),
+              "story": item.get("story", ""),
+              "reelUrl": item.get("reelUrl", ""),
+              "photos": photos,
+              "highlights": item.get("highlights") or [],
+              "testimonials": item.get("testimonials") or [],
+            }
+          ],
         }
-        patch = {key: value for key, value in patch.items() if value is not None}
-        self.travel_gallery_collection.update_one({"id": dest_id}, {"$set": patch})
-        synced += 1
+      )
+    return out
+
+  def _init_travel_gallery(self) -> None:
+    coll = self.travel_gallery_collection
+    if coll.count_documents({}) == 0:
+      # Prefer admin-edited data from the old `travel_gallery` collection, else the bundled seed.
+      legacy = list(self.db["travel_gallery"].find({})) if TRAVEL_GALLERY_COLLECTION != "travel_gallery" else []
+      source = [{k: v for k, v in row.items() if k != "_id"} for row in legacy] or self._load_travel_gallery_seed()
+      now = datetime.utcnow()
+      docs = [{**self._legacy_state_to_places(item), "createdAt": now, "updatedAt": now} for item in source]
+      if docs:
+        coll.insert_many(docs)
+        logger.info("Seeded %s travel gallery states into %s", len(docs), TRAVEL_GALLERY_COLLECTION)
+      return
+
+    # Collection already exists: convert any old-shape documents, add missing seed states, refresh map geometry only.
+    now = datetime.utcnow()
+    for row in list(coll.find({"places": {"$exists": False}})):
+      converted = self._legacy_state_to_places({k: v for k, v in row.items() if k != "_id"})
+      coll.update_one({"_id": row["_id"]}, {"$set": {**converted, "updatedAt": now}})
+    self._assign_known_places(coll)
+    for item in self._load_travel_gallery_seed():
+      dest_id = str(item["id"])
+      if coll.find_one({"id": dest_id}, {"_id": 1}):
+        patch = {k: item[k] for k in ("mapPin", "svgStateId", "sortOrder") if k in item}
+        coll.update_one({"id": dest_id}, {"$set": patch})
       else:
-        self.travel_gallery_collection.insert_one({**item, "createdAt": now, "updatedAt": now})
-        inserted += 1
-    if synced or inserted:
-      logger.info("Travel gallery sync: updated %s, inserted %s", synced, inserted)
+        coll.insert_one({**self._legacy_state_to_places(item), "createdAt": now, "updatedAt": now})
+
+  # Places we already know about, so the first trip appears on the district map right away.
+  _KNOWN_PLACES = {
+    ("himachal", "jibhi"): {
+      "districtId": "kullu", "districtName": "Kullu", "area": "Banjar Valley", "lat": 31.5985, "lng": 77.3476,
+    },
+    ("himachal", "spiti-valley"): {
+      "districtId": "lahaul-and-spiti", "districtName": "Lahaul and Spiti", "area": "Spiti Valley", "lat": 32.2276, "lng": 78.0714,
+    },
+  }
+
+  def _assign_known_places(self, coll: Collection) -> None:
+    for (state_id, place_id), info in self._KNOWN_PLACES.items():
+      row = coll.find_one({"id": state_id}, {"places": 1})
+      if not row:
+        continue
+      places = row.get("places") or []
+      changed = False
+      for place in places:
+        if place.get("id") == place_id and not place.get("districtId"):
+          place.update(info)
+          changed = True
+      if changed:
+        coll.update_one({"id": state_id}, {"$set": {"places": places}})
+
+  @staticmethod
+  def _strip_gallery_row(row: dict) -> dict:
+    for key in ("_id", "createdAt", "updatedAt"):
+      row.pop(key, None)
+    return row
+
+  @staticmethod
+  def _with_legacy_fields(row: dict) -> dict:
+    """Flatten all visits into the old single-trip fields so the current public page keeps working."""
+    places = row.get("places") or []
+    visits = [v for p in places for v in (p.get("visits") or [])]
+    photos = [ph for v in visits for ph in (v.get("photos") or [])]
+    latest = visits[0] if visits else {}
+    row["photos"] = photos
+    row["testimonials"] = [t for v in visits for t in (v.get("testimonials") or [])]
+    row["highlights"] = [h for v in visits for h in (v.get("highlights") or [])]
+    row["story"] = latest.get("story", "")
+    row["dates"] = latest.get("dates", "")
+    row["travelers"] = sum(int(v.get("travelers") or 0) for v in visits)
+    row["days"] = latest.get("days", 0)
+    row["reelUrl"] = latest.get("reelUrl", "")
+    row["photoCountLabel"] = str(len(photos)) if photos else ""
+    row["tripLabel"] = ", ".join(p.get("name", "") for p in places if p.get("name"))
+    row["tripMeta"] = latest.get("tripMeta", "")
+    if not row.get("heroImage"):
+      row["heroImage"] = next((p.get("heroImage") for p in places if p.get("heroImage")), "") or (photos[0] if photos else "")
+    return row
+
+  @staticmethod
+  def _sorted_visits(visits: List[dict]) -> List[dict]:
+    # newest first; visits without visitedOn keep their order after dated ones
+    return sorted(visits, key=lambda v: v.get("visitedOn") or "", reverse=True)
 
   def list_travel_gallery(self) -> List[dict]:
     rows = list(self.travel_gallery_collection.find({}).sort([("sortOrder", ASCENDING), ("state", ASCENDING)]))
     out: List[dict] = []
     for row in rows:
-      row.pop("_id", None)
-      row.pop("createdAt", None)
-      row.pop("updatedAt", None)
-      out.append(row)
+      self._strip_gallery_row(row)
+      for place in row.get("places") or []:
+        place["visits"] = self._sorted_visits(place.get("visits") or [])
+      out.append(self._with_legacy_fields(row))
     return out
 
   def find_travel_gallery_by_id(self, dest_id: str) -> Optional[dict]:
@@ -945,58 +1056,190 @@ class MongoService:
     row = self.travel_gallery_collection.find_one({"id": key})
     if not row:
       return None
-    row.pop("_id", None)
-    row.pop("createdAt", None)
-    row.pop("updatedAt", None)
-    return row
+    self._strip_gallery_row(row)
+    for place in row.get("places") or []:
+      place["visits"] = self._sorted_visits(place.get("visits") or [])
+    return self._with_legacy_fields(row)
 
-  def update_travel_gallery(self, dest_id: str, fields: Dict[str, Any]) -> bool:
-    key = (dest_id or "").strip().lower()
-    if not key:
-      return False
+  def _save_places(self, state_id: str, places: List[dict]) -> None:
+    has_visits = any(p.get("visits") for p in places)
+    update: Dict[str, Any] = {"places": places, "updatedAt": datetime.utcnow()}
+    if has_visits:
+      update["status"] = "completed"
+    self.travel_gallery_collection.update_one({"id": state_id}, {"$set": update})
 
-    allowed = {
-      "state",
-      "title",
-      "tripLabel",
-      "tripMeta",
-      "status",
-      "pinSubtitle",
-      "dates",
-      "travelers",
-      "days",
-      "photoCountLabel",
-      "heroImage",
-      "story",
-      "reelUrl",
-      "photos",
-      "testimonials",
-      "highlights",
-      "videos",
+  def _load_places(self, state_id: str) -> Optional[List[dict]]:
+    row = self.travel_gallery_collection.find_one({"id": (state_id or "").strip().lower()}, {"places": 1})
+    if row is None:
+      return None
+    return list(row.get("places") or [])
+
+  def create_gallery_state(self, fields: Dict[str, Any]) -> Optional[dict]:
+    state = str(fields.get("state") or "").strip()
+    state_id = self._slugify(fields.get("id") or state)
+    if not state or not state_id:
+      return None
+    if self.travel_gallery_collection.find_one({"id": state_id}, {"_id": 1}):
+      return None
+    now = datetime.utcnow()
+    last = self.travel_gallery_collection.find_one(sort=[("sortOrder", DESCENDING)], projection={"sortOrder": 1})
+    doc = {
+      "id": state_id,
+      "state": state,
+      "title": state,
+      "svgStateId": fields.get("svgStateId") or "",
+      "status": fields.get("status") or "coming_soon",
+      "pinSubtitle": fields.get("pinSubtitle") or "Coming Soon",
+      "heroImage": fields.get("heroImage") or "",
+      "mapPin": fields.get("mapPin") or {"x": 306, "y": 348},
+      "sortOrder": int((last or {}).get("sortOrder", 0)) + 1,
+      "places": [],
+      "createdAt": now,
+      "updatedAt": now,
     }
-    update: Dict[str, Any] = {}
-    for api_key, value in fields.items():
-      if api_key not in allowed or value is None:
-        continue
-      update[api_key] = value
+    self.travel_gallery_collection.insert_one(doc)
+    return self.find_travel_gallery_by_id(state_id)
 
+  def update_gallery_state(self, state_id: str, fields: Dict[str, Any]) -> bool:
+    allowed = {"state", "svgStateId", "status", "pinSubtitle", "heroImage", "mapPin"}
+    update = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if "state" in update:
+      update["title"] = update["state"]
     if not update:
-      return self.find_travel_gallery_by_id(key) is not None
-
+      return self.find_travel_gallery_by_id(state_id) is not None
     update["updatedAt"] = datetime.utcnow()
-    result = self.travel_gallery_collection.update_one({"id": key}, {"$set": update})
+    result = self.travel_gallery_collection.update_one({"id": (state_id or "").strip().lower()}, {"$set": update})
     return result.matched_count > 0
 
-  def append_travel_gallery_photo(self, dest_id: str, photo_path: str) -> bool:
-    key = (dest_id or "").strip().lower()
-    path = (photo_path or "").strip()
-    if not key or not path:
+  def add_gallery_place(self, state_id: str, fields: Dict[str, Any]) -> Optional[dict]:
+    places = self._load_places(state_id)
+    if places is None:
+      return None
+    name = str(fields.get("name") or "").strip()
+    base = self._slugify(name) or "place"
+    taken = {p.get("id") for p in places}
+    place_id, n = base, 2
+    while place_id in taken:
+      place_id, n = f"{base}-{n}", n + 1
+    place = {
+      "id": place_id,
+      "name": name,
+      "tagline": fields.get("tagline") or "",
+      "description": fields.get("description") or "",
+      "heroImage": fields.get("heroImage") or "",
+      "districtId": fields.get("districtId") or "",
+      "districtName": fields.get("districtName") or "",
+      "area": fields.get("area") or "",
+      "visits": [],
+    }
+    for key in ("lat", "lng", "mapPin"):
+      if fields.get(key) is not None:
+        place[key] = fields[key]
+    places.append(place)
+    self._save_places(state_id.strip().lower(), places)
+    return place
+
+  def update_gallery_place(self, state_id: str, place_id: str, fields: Dict[str, Any]) -> bool:
+    places = self._load_places(state_id)
+    if places is None:
       return False
-    result = self.travel_gallery_collection.update_one(
-      {"id": key},
-      {"$push": {"photos": path}, "$set": {"updatedAt": datetime.utcnow()}},
-    )
-    return result.matched_count > 0
+    for place in places:
+      if place.get("id") == place_id:
+        for key in ("name", "tagline", "description", "heroImage", "mapPin", "districtId", "districtName", "area", "lat", "lng"):
+          if key in fields and fields[key] is not None:
+            place[key] = fields[key]
+        self._save_places(state_id.strip().lower(), places)
+        return True
+    return False
+
+  def delete_gallery_place(self, state_id: str, place_id: str) -> bool:
+    places = self._load_places(state_id)
+    if places is None:
+      return False
+    kept = [p for p in places if p.get("id") != place_id]
+    if len(kept) == len(places):
+      return False
+    self._save_places(state_id.strip().lower(), kept)
+    return True
+
+  def add_gallery_visit(self, state_id: str, place_id: str, fields: Dict[str, Any]) -> Optional[dict]:
+    places = self._load_places(state_id)
+    if places is None:
+      return None
+    for place in places:
+      if place.get("id") == place_id:
+        visit = {
+          "id": uuid4().hex[:10],
+          "label": "",
+          "visitedOn": "",
+          "startDate": "",
+          "endDate": "",
+          "dates": "",
+          "travelers": 0,
+          "days": 0,
+          "tripMeta": "",
+          "story": "",
+          "reelUrl": "",
+          "photos": [],
+          "highlights": [],
+          "testimonials": [],
+        }
+        visit.update({k: v for k, v in fields.items() if k in visit and k != "id" and v is not None})
+        place.setdefault("visits", []).append(visit)
+        if not place.get("heroImage") and visit["photos"]:
+          place["heroImage"] = visit["photos"][0]
+        self._save_places(state_id.strip().lower(), places)
+        return visit
+    return None
+
+  def update_gallery_visit(self, state_id: str, place_id: str, visit_id: str, fields: Dict[str, Any]) -> bool:
+    places = self._load_places(state_id)
+    if places is None:
+      return False
+    allowed = {"label", "visitedOn", "startDate", "endDate", "dates", "travelers", "days", "tripMeta", "story", "reelUrl", "photos", "highlights", "testimonials"}
+    for place in places:
+      if place.get("id") != place_id:
+        continue
+      for visit in place.get("visits") or []:
+        if visit.get("id") == visit_id:
+          visit.update({k: v for k, v in fields.items() if k in allowed and v is not None})
+          if not place.get("heroImage") and visit.get("photos"):
+            place["heroImage"] = visit["photos"][0]
+          self._save_places(state_id.strip().lower(), places)
+          return True
+    return False
+
+  def delete_gallery_visit(self, state_id: str, place_id: str, visit_id: str) -> bool:
+    places = self._load_places(state_id)
+    if places is None:
+      return False
+    for place in places:
+      if place.get("id") != place_id:
+        continue
+      visits = place.get("visits") or []
+      kept = [v for v in visits if v.get("id") != visit_id]
+      if len(kept) == len(visits):
+        return False
+      place["visits"] = kept
+      self._save_places(state_id.strip().lower(), places)
+      return True
+    return False
+
+  def append_gallery_visit_photos(self, state_id: str, place_id: str, visit_id: str, paths: List[str]) -> bool:
+    places = self._load_places(state_id)
+    if places is None:
+      return False
+    for place in places:
+      if place.get("id") != place_id:
+        continue
+      for visit in place.get("visits") or []:
+        if visit.get("id") == visit_id:
+          visit["photos"] = [*(visit.get("photos") or []), *paths]
+          if not place.get("heroImage") and visit["photos"]:
+            place["heroImage"] = visit["photos"][0]
+          self._save_places(state_id.strip().lower(), places)
+          return True
+    return False
 
 
 mongo_service = MongoService()

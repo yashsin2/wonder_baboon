@@ -1,0 +1,63 @@
+/* District maps (assets/maps/*.svg) — shared by the Travel Gallery page and the admin. */
+.wb-state-svg {
+  --wb-d-fill: rgba(70, 52, 34, 0.78);
+  --wb-d-fill-hover: rgba(108, 80, 50, 0.92);
+  --wb-d-fill-trips: #c9962b;
+  --wb-d-fill-trips-hover: #dfae3c;
+  --wb-d-fill-selected: #f0bf44;
+  --wb-d-line: #eadfc6;
+  --wb-d-outline: #1f160d;
+  --wb-d-label: #f6efdc;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+/* thick line under the districts = the outer border of the state */
+.wb-state-svg .wb-outline path {
+  stroke: var(--wb-d-outline);
+  stroke-width: 6;
+  fill: none;
+}
+
+.wb-state-svg .wb-district {
+  fill: var(--wb-d-fill);
+  stroke: var(--wb-d-line);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+  cursor: pointer;
+  transition: fill 0.2s ease, opacity 0.3s ease, stroke-width 0.2s ease;
+}
+.wb-state-svg .wb-district:hover { fill: var(--wb-d-fill-hover); }
+.wb-state-svg .wb-district.has-trips { fill: var(--wb-d-fill-trips); }
+.wb-state-svg .wb-district.has-trips:hover { fill: var(--wb-d-fill-trips-hover); }
+.wb-state-svg .wb-district.is-selected { fill: var(--wb-d-fill-selected); stroke: #fff; stroke-width: 2.4; }
+.wb-state-svg .wb-district.is-dim { opacity: 0.42; }
+
+.wb-state-svg .wb-district-label {
+  fill: var(--wb-d-label);
+  font-family: "Lora", Georgia, serif;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: rgba(20, 14, 8, 0.7);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* light variant used inside the admin */
+.wb-state-svg--light {
+  --wb-d-fill: #e9e1cf;
+  --wb-d-fill-hover: #ddd2b8;
+  --wb-d-fill-trips: #f1d68a;
+  --wb-d-fill-trips-hover: #ecc766;
+  --wb-d-fill-selected: #5b8f6e;
+  --wb-d-line: #fff;
+  --wb-d-outline: #5a4a33;
+  --wb-d-label: #3a2d1c;
+}
+.wb-state-svg--light .wb-district-label { stroke: rgba(255, 255, 255, 0.85); stroke-width: 3px; }

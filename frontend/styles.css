@@ -4863,7 +4863,7 @@ footer::before {
 /* Enhanced Footer */
 .footer-content {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 30px;
   padding: 40px 20px;
   max-width: 1200px;
@@ -7233,3 +7233,50 @@ body[data-trip-style] .logo .logo-text {
     }
   }
 }
+/* ── Booking modal: fixed date + additional traveler details ── */
+.bk-date-locked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding: 10px 12px;
+  border: 1px dashed rgba(0, 0, 0, 0.25);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.04);
+  cursor: not-allowed;
+  user-select: none;
+}
+.bk-date-locked-value { font-weight: 700; }
+.bk-date-locked-note { font-size: 0.78rem; opacity: 0.65; }
+
+.bk-extra-block {
+  margin: 14px 0 0;
+  padding: 4px 12px 12px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 12px;
+}
+.bk-extra-block legend { padding: 0 8px; font-weight: 700; font-size: 0.9rem; }
+.bk-extra-block input { width: 100%; box-sizing: border-box; }
+.bk-extra-block .bk-mobile-wrap input { width: auto; }
+
+.booking-companion-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(217, 162, 27, 0.15);
+  font-size: 0.9rem;
+}
+
+/* Footer — contact block */
+.footer-contact { font-style: normal; display: grid; gap: 12px; }
+.footer-contact-org { margin: 0; display: grid; gap: 2px; }
+.footer-contact-org small { display: block; opacity: 0.7; font-size: 0.72rem; letter-spacing: 0.03em; }
+.footer-contact-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.footer-contact-list li { display: flex; align-items: center; gap: 12px; padding: 6px 8px; margin: 0 -8px; border-radius: 12px; transition: background 0.2s ease; }
+.footer-contact-list li:hover { background: rgba(255, 255, 255, 0.08); }
+.fc-ico { flex: none; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, 0.12); font-size: 1rem; }
+.fc-body { display: grid; gap: 1px; min-width: 0; }
+.fc-body small { font-size: 0.68rem; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.08em; }
+.fc-body a { overflow-wrap: anywhere; font-weight: 600; text-decoration: none; }
+.fc-body a:hover, .fc-body a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 768px) { .footer-contact-list { justify-items: center; } .footer-contact-list li { text-align: left; } }

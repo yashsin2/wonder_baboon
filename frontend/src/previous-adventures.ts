@@ -1,3 +1,4 @@
+import { galleryToJsonLd, setJsonLd, setPageSeo } from "./seo.js";
 import { INDIA_MAP_VIEWBOX, mountIndiaMap, pinToPercent, setHighlightedState } from "./india-map.js";
 import {
   getAdventureById,
@@ -6,9 +7,21 @@ import {
   loadTravelGalleryFromApi,
   PREVIOUS_ADVENTURES,
   type AdventureDestination,
+  type AdventurePlace,
+  type AdventureVisit,
   type AdventureTestimonial,
 } from "./previous-adventures-data.js";
 import { updateHeaderAuth } from "./config.js";
+import {
+  districtFromTarget,
+  getStateMapMeta,
+  loadStateMapManifest,
+  loadStateMapSvg,
+  markDistricts,
+  mountStateMap,
+  projectLatLng,
+  type StateMapMeta,
+} from "./state-maps.js";
 
 function escapeHtml(text: string): string {
   return text
@@ -25,6 +38,13 @@ let indiaSvg: SVGSVGElement | null = null;
 let reviewPageIndex = 0;
 let reviewPageCount = 0;
 let reviewBookOpen = false;
+let zoomedId: string | null = null;
+let activePlaceKey: string | null = null;
+let activeDistrictId: string | null = null;
+let stateMeta: StateMapMeta | null = null;
+let stateMapSvg: SVGSVGElement | null = null;
+let zoomToken = 0;
+let clipTimer = 0;
 
 function statItem(icon: string, label: string): string {
   return `
@@ -133,7 +153,7 @@ function renderDetailContent(adv: AdventureDestination): string {
     : "";
 
   const reelBtn =
-    adv.reelUrl && adv.reelUrl.trim()
+    adv.reelUrl && /^https?:\/\//i.test(adv.reelUrl.trim())
       ? `<a class="adv-btn-reel" href="${escapeHtml(adv.reelUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span> Watch Trip Reel</a>`
       : `<button type="button" class="adv-btn-reel" id="advWatchReel"><span aria-hidden="true">▶</span> Watch Trip Reel</button>`;
 
@@ -282,7 +302,9 @@ function openDetail(adv: AdventureDestination): void {
 
 function closeDetail(): void {
   activeAdventureId = null;
-  setPinActive(null);
+  activePlaceKey = null;
+  document.querySelectorAll(".adv-zoom-card, .adv-place-pin").forEach((el) => el.classList.remove("is-active"));
+  setPinActive(zoomedId);
   drawPinToCardLine(null);
   const panel = document.getElementById("advDetailPanel");
   const backdrop = document.getElementById("advDetailBackdrop");
@@ -292,7 +314,12 @@ function closeDetail(): void {
   document.getElementById("advMobileHint")?.removeAttribute("hidden");
 
   const url = new URL(window.location.href);
-  url.searchParams.delete("dest");
+  if (zoomedId) url.searchParams.set("dest", zoomedId);
+  else url.searchParams.delete("dest");
+  if (activeDistrictId) url.searchParams.set("district", activeDistrictId);
+  else url.searchParams.delete("district");
+  url.searchParams.delete("place");
+  url.searchParams.delete("trip");
   const qs = url.searchParams.toString();
   history.replaceState(null, "", url.pathname + (qs ? `?${qs}` : ""));
 }
@@ -477,9 +504,19 @@ function onLightboxKey(event: KeyboardEvent): void {
   if (event.key === "ArrowRight") stepLightbox(1);
 }
 
+function hasZoomableState(adv: AdventureDestination): boolean {
+  return Boolean(adv.svgStateId && indiaSvg?.querySelector(`#${adv.svgStateId}`));
+}
+
 function selectDestination(id: string): void {
   const adv = getAdventureById(id);
   if (!adv) return;
+  if (hasZoomableState(adv)) {
+    if (zoomedId === id) zoomOut();
+    else zoomToState(adv);
+    return;
+  }
+  if (zoomedId) zoomOut();
   if (activeAdventureId === id) {
     closeDetail();
     return;
@@ -547,7 +584,8 @@ function renderPinChips(): void {
 function initDefaultView(): void {
   const dest = new URLSearchParams(window.location.search).get("dest");
   const adv = dest ? getAdventureById(dest) : isDesktopLayout() ? getAdventureById("himachal") : undefined;
-  if (adv) openDetail(adv);
+  // States with places are opened by the zoom flow once the map is ready (see initMap).
+  if (adv && !adv.svgStateId) openDetail(adv);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -555,6 +593,7 @@ document.addEventListener("DOMContentLoaded", () => {
   bindChrome();
   void (async () => {
     await loadTravelGalleryFromApi();
+    setJsonLd("ld-gallery", galleryToJsonLd(PREVIOUS_ADVENTURES));
     renderPinChips();
     initDefaultView();
     await initMap().then(() => {
@@ -567,10 +606,18 @@ function bindChrome(): void {
   document.getElementById("advDetailClose")?.addEventListener("click", closeDetail);
   document.getElementById("advDetailBackdrop")?.addEventListener("click", closeDetail);
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.body.classList.contains("adv-detail-open")) {
+    if (e.key !== "Escape") return;
+    if (document.body.classList.contains("adv-detail-open")) {
       if (document.body.classList.contains("adv-lightbox-open")) closeLightbox();
       else closeDetail();
+    } else if (activeDistrictId) {
+      selectDistrict(null);
+    } else if (zoomedId) {
+      zoomOut();
     }
+  });
+  window.addEventListener("resize", () => {
+    if (zoomedId) relayoutZoom();
   });
 }
 
@@ -592,7 +639,552 @@ async function initMap(): Promise<void> {
     frame?.removeAttribute("hidden");
     renderMapPins();
     if (activeAdventureId) drawPinToCardLine(activeAdventureId);
-  } catch {
+    prefetchStateMaps();
+
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("dest");
+    const target = wanted ? getAdventureById(wanted) : undefined;
+    if (target && hasZoomableState(target)) {
+      zoomToState(target, true, {
+        district: params.get("district"),
+        place: params.get("place"),
+        trip: params.get("trip"),
+      });
+    }
+  } catch (error) {
+    console.error("Travel gallery map error", error);
     if (loading) loading.textContent = "Map could not load. Use the destination buttons below.";
   }
+}
+
+
+/* ───────────── India → State → District → Trip ─────────────
+ * Every state zooms (visited or coming soon). The India SVG zooms onto the state, then crossfades into the
+ * district map (assets/maps/<code>.svg) with a pin per place. Click a district to see its places and trips.
+ */
+
+const MAP_TOP_RESERVE = 58;
+const stateBottomReserve = (): number => (isDesktopLayout() ? 200 : 176);
+
+function frameSize(): { w: number; h: number } {
+  const frame = document.getElementById("advMapFrame");
+  return { w: frame?.clientWidth || 600, h: frame?.clientHeight || 700 };
+}
+
+/** Free area of the frame (px) that the state / district map should fill. */
+function mapBox(): { x: number; y: number; w: number; h: number } {
+  const { w, h } = frameSize();
+  const side = 10;
+  return { x: side, y: MAP_TOP_RESERVE, w: Math.max(120, w - side * 2), h: Math.max(120, h - MAP_TOP_RESERVE - stateBottomReserve()) };
+}
+
+function zoomTransformFor(path: SVGGraphicsElement): string {
+  const { w: W, h: H } = frameSize();
+  const box = path.getBBox();
+  const bx = (box.x / INDIA_MAP_VIEWBOX.width) * W;
+  const by = (box.y / INDIA_MAP_VIEWBOX.height) * H;
+  const bw = (box.width / INDIA_MAP_VIEWBOX.width) * W;
+  const bh = (box.height / INDIA_MAP_VIEWBOX.height) * H;
+  const target = mapBox();
+  const scale = Math.max(1.4, Math.min(14, target.w / bw, target.h / bh)) * 0.96;
+  const tx = target.x + target.w / 2 - scale * (bx + bw / 2);
+  const ty = target.y + target.h / 2 - scale * (by + bh / 2);
+  return `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${scale.toFixed(3)})`;
+}
+
+function currentAdventure(): AdventureDestination | undefined {
+  return zoomedId ? getAdventureById(zoomedId) : undefined;
+}
+
+function tripsIn(place: AdventurePlace): number {
+  return place.visits.length;
+}
+
+function tripLabel(v: AdventureVisit): string {
+  return v.label || v.dates || "Trip";
+}
+
+function placeCover(place: AdventurePlace): string {
+  return place.heroImage || place.visits.flatMap((v) => v.photos ?? [])[0] || "";
+}
+
+function districtCounts(adv: AdventureDestination): Record<string, number> {
+  const out: Record<string, number> = {};
+  (adv.places ?? []).forEach((p) => {
+    if (p.districtId) out[p.districtId] = (out[p.districtId] ?? 0) + tripsIn(p);
+  });
+  return out;
+}
+
+function districtLabel(id: string | null | undefined): string {
+  if (!id) return "";
+  return stateMeta?.districts.find((d) => d.id === id)?.name ?? id;
+}
+
+const BASE_TITLE = document.title;
+const BASE_DESCRIPTION = document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content ?? "";
+
+/** Title + description follow what is on screen (state → district → place), the canonical URL stays the gallery. */
+function syncGallerySeo(params: Record<string, string | null>): void {
+  const adv = params.dest ? getAdventureById(params.dest) : undefined;
+  if (!adv) {
+    setPageSeo(BASE_TITLE, BASE_DESCRIPTION);
+    return;
+  }
+  const place = params.place ? adv.places?.find((p) => p.id === params.place) : undefined;
+  const district = (place?.districtName || districtLabel(params.district)) ?? "";
+  if (place) {
+    const where = [place.area, district, adv.state].filter(Boolean).join(", ");
+    const lead = (place.description || place.tagline || "").trim().replace(/[.\s]+$/, "");
+    const text = `${lead ? `${lead}. ` : ""}Photos, stories and traveler reviews from our group trips to ${place.name} (${where}).`;
+    setPageSeo(`${place.name}, ${adv.state}: Trip Photos & Reviews | Wonder Baboon`, text);
+  } else if (district) {
+    const names = (adv.places ?? []).filter((p) => p.districtId === params.district).map((p) => p.name);
+    setPageSeo(
+      `${district}, ${adv.state}: Places & Trips | Wonder Baboon`,
+      names.length ? `Places we have travelled to in ${district} district, ${adv.state}: ${names.join(", ")}. See photos, stories and reviews.` : `Explore ${district} district in ${adv.state} on the Wonder Baboon travel gallery map.`
+    );
+  } else {
+    const names = (adv.places ?? []).map((p) => p.name);
+    setPageSeo(
+      `${adv.state} Group Trips: Places, Photos & Stories | Wonder Baboon`,
+      names.length ? `Wonder Baboon group trips in ${adv.state}: ${names.join(", ")}. District map, trip photos and traveler reviews.` : `${adv.state} on the Wonder Baboon travel gallery — our trips and stories from the region.`
+    );
+  }
+}
+
+function setUrlParams(params: Record<string, string | null>): void {
+  syncGallerySeo(params);
+  const url = new URL(window.location.href);
+  Object.entries(params).forEach(([k, v]) => (v ? url.searchParams.set(k, v) : url.searchParams.delete(k)));
+  const qs = url.searchParams.toString();
+  history.replaceState(null, "", url.pathname + (qs ? `?${qs}` : ""));
+}
+
+function ensureStateLayer(): HTMLElement | null {
+  const frame = document.getElementById("advMapFrame");
+  if (!frame) return null;
+  let layer = document.getElementById("advStateMap");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.id = "advStateMap";
+    layer.className = "adv-state-map";
+    layer.innerHTML = `<div class="adv-state-map-inner" id="advStateMapInner"></div>`;
+    frame.insertBefore(layer, document.getElementById("advZoomUi"));
+  }
+  return layer;
+}
+
+function zoomToState(
+  adv: AdventureDestination,
+  instant = false,
+  restore?: { district?: string | null; place?: string | null; trip?: string | null }
+): void {
+  const path = adv.svgStateId ? indiaSvg?.querySelector<SVGGraphicsElement>(`#${adv.svgStateId}`) : null;
+  const zoom = document.getElementById("advMapZoom");
+  const frame = document.getElementById("advMapFrame");
+  if (!path || !zoom || !frame) return;
+
+  if (activeAdventureId) closeDetail();
+  const token = ++zoomToken;
+  zoomedId = adv.id;
+  activeDistrictId = null;
+  activePlaceKey = null;
+  stateMeta = null;
+  stateMapSvg = null;
+  setPinActive(adv.id);
+  drawPinToCardLine(null);
+
+  // drop whatever district map was showing (switching state, or re-entering) so it can never flash in the wrong place
+  const oldInner = document.getElementById("advStateMapInner");
+  if (oldInner) {
+    oldInner.innerHTML = "";
+    oldInner.style.transform = "";
+    Object.assign(oldInner.style, { width: "0px", height: "0px" });
+  }
+  zoom.classList.toggle("is-instant", instant);
+  frame.classList.remove("is-districts");
+  frame.classList.add("is-zoomed", "is-clip");
+  window.clearTimeout(clipTimer);
+  zoom.style.transform = zoomTransformFor(path);
+  renderZoomUi(adv);
+  setUrlParams({ dest: adv.id, district: null, place: null, trip: null });
+
+  void (async () => {
+    let meta: StateMapMeta | null = null;
+    try {
+      meta = await getStateMapMeta(adv.svgStateId);
+      if (token !== zoomToken || !meta) return;
+      const layer = ensureStateLayer();
+      const inner = document.getElementById("advStateMapInner");
+      if (!layer || !inner) return;
+      stateMapSvg = await mountStateMap(inner, meta);
+      if (token !== zoomToken || !stateMapSvg) return;
+      stateMeta = meta;
+      decorateStateMap(adv, meta, inner);
+      relayoutZoom();
+      layer.classList.toggle("is-instant", instant);
+      frame.classList.add("is-districts");
+      renderZoomUi(adv);
+    } catch {
+      /* no district map — the zoomed state outline + list below still works */
+    }
+    if (token !== zoomToken) return;
+    if (restore?.district && stateMeta) selectDistrict(restore.district);
+    const place = restore?.place ? adv.places?.find((p) => p.id === restore.place) : undefined;
+    if (place) openPlace(adv, place, restore?.trip ?? null);
+  })();
+}
+
+/** District tooltips, labels, click handling and place pins. */
+function decorateStateMap(adv: AdventureDestination, meta: StateMapMeta, inner: HTMLElement): void {
+  const svg = stateMapSvg;
+  if (!svg) return;
+
+  svg.querySelectorAll<SVGPathElement>(".wb-districts [data-district]").forEach((path) => {
+    const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    title.textContent = path.getAttribute("data-name") ?? "";
+    path.appendChild(title);
+  });
+
+  if (meta.districts.length <= 30) {
+    const fontSize = meta.w / (meta.districts.length > 14 ? 78 : 56);
+    const labels = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    labels.setAttribute("class", "wb-labels");
+    meta.districts.forEach((d) => {
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", String(d.cx));
+      t.setAttribute("y", String(d.cy));
+      t.setAttribute("font-size", fontSize.toFixed(1));
+      t.setAttribute("class", "wb-district-label");
+      t.textContent = d.name;
+      labels.appendChild(t);
+    });
+    svg.appendChild(labels);
+  }
+
+  svg.addEventListener("click", (event) => {
+    const id = districtFromTarget(event.target);
+    if (id) selectDistrict(activeDistrictId === id ? null : id);
+  });
+
+  markDistricts(svg, districtCounts(adv), null);
+
+  inner.querySelector(".adv-state-pins")?.remove();
+  const pins = document.createElement("div");
+  pins.className = "adv-state-pins";
+  // Nearby pins would hide each other's names: put the tag above the first, then to the right / left of its neighbours.
+  const placed: { x: number; y: number }[] = [];
+  const near = meta.w * 0.07;
+  pins.innerHTML = (adv.places ?? [])
+    .filter((p) => typeof p.lat === "number" && typeof p.lng === "number")
+    .map((p) => {
+      const pt = projectLatLng(meta, p.lat as number, p.lng as number);
+      const crowd = placed.filter((q) => Math.hypot(q.x - pt.x, q.y - pt.y) < near).length;
+      placed.push(pt);
+      const side = crowd === 0 ? "" : crowd % 2 === 1 ? " adv-place-pin--right" : " adv-place-pin--left";
+      return `<button type="button" class="adv-place-pin${side}" data-place="${escapeHtml(p.id)}"
+          style="left:${((pt.x / meta.w) * 100).toFixed(2)}%;top:${((pt.y / meta.h) * 100).toFixed(2)}%"
+          aria-label="${escapeHtml(p.name)}">
+          <span class="adv-place-pin-marker" aria-hidden="true"></span>
+          <span class="adv-place-pin-tag">${escapeHtml(p.name)}</span>
+        </button>`;
+    })
+    .join("");
+  inner.appendChild(pins);
+  pins.querySelectorAll<HTMLButtonElement>(".adv-place-pin").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const place = adv.places?.find((p) => p.id === btn.dataset.place);
+      if (place) openPlace(adv, place, null);
+    });
+  });
+}
+
+/** Fit the district map into the free area; zoom further into the selected district. */
+function relayoutZoom(): void {
+  const adv = currentAdventure();
+  const frame = document.getElementById("advMapFrame");
+  const zoom = document.getElementById("advMapZoom");
+  if (!adv || !frame || !zoom) return;
+
+  const path = adv.svgStateId ? indiaSvg?.querySelector<SVGGraphicsElement>(`#${adv.svgStateId}`) : null;
+  if (path) {
+    const was = zoom.classList.contains("is-instant");
+    zoom.classList.add("is-instant");
+    zoom.style.transform = zoomTransformFor(path);
+    if (!was) window.setTimeout(() => zoom.classList.remove("is-instant"), 60);
+  }
+
+  const inner = document.getElementById("advStateMapInner");
+  if (!inner || !stateMeta || !stateMapSvg) return;
+  const box = mapBox();
+  const fit = Math.min(box.w / stateMeta.w, box.h / stateMeta.h);
+  const iw = stateMeta.w * fit;
+  const ih = stateMeta.h * fit;
+  const left = box.x + (box.w - iw) / 2;
+  const top = box.y + (box.h - ih) / 2;
+  Object.assign(inner.style, { left: `${left}px`, top: `${top}px`, width: `${iw}px`, height: `${ih}px` });
+
+  let transform = "";
+  let z = 1;
+  if (activeDistrictId) {
+    const dpath = stateMapSvg.querySelector<SVGGraphicsElement>(`[data-district="${activeDistrictId}"]`);
+    if (dpath) {
+      const b = dpath.getBBox();
+      const k = iw / stateMeta.w;
+      const bw = b.width * k;
+      const bh = b.height * k;
+      z = Math.max(1, Math.min(3.2, (box.w / bw) * 0.8, (box.h / bh) * 0.8));
+      const cx = (b.x + b.width / 2) * k;
+      const cy = (b.y + b.height / 2) * k;
+      const tx = box.x + box.w / 2 - left - z * cx;
+      const ty = box.y + box.h / 2 - top - z * cy;
+      transform = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${z.toFixed(3)})`;
+    }
+  }
+  inner.style.setProperty("--z", String(z));
+  inner.style.transform = transform;
+}
+
+function selectDistrict(id: string | null): void {
+  const adv = currentAdventure();
+  if (!adv) return;
+  if (activeAdventureId) closeDetail();
+  activeDistrictId = id;
+  if (stateMapSvg) markDistricts(stateMapSvg, districtCounts(adv), id);
+  relayoutZoom();
+  renderZoomUi(adv);
+  setUrlParams({ dest: adv.id, district: id, place: null, trip: null });
+}
+
+function zoomOut(): void {
+  if (activeAdventureId) closeDetail();
+  zoomToken++;
+  zoomedId = null;
+  activeDistrictId = null;
+  const zoom = document.getElementById("advMapZoom");
+  const frame = document.getElementById("advMapFrame");
+  const ui = document.getElementById("advZoomUi");
+  zoom?.classList.remove("is-instant");
+  if (zoom) zoom.style.transform = "";
+  frame?.classList.remove("is-districts", "is-zoomed");
+  const inner = document.getElementById("advStateMapInner");
+  if (inner) inner.style.pointerEvents = "none";
+  // keep clipping while the map animates back, then clean the district layer up
+  window.clearTimeout(clipTimer);
+  clipTimer = window.setTimeout(() => {
+    if (zoomedId) return;
+    frame?.classList.remove("is-clip");
+    if (inner) {
+      inner.innerHTML = "";
+      inner.style.transform = "";
+      inner.style.pointerEvents = "";
+      Object.assign(inner.style, { width: "0px", height: "0px" });
+    }
+  }, 1000);
+  stateMeta = null;
+  stateMapSvg = null;
+  if (ui) {
+    ui.hidden = true;
+    ui.innerHTML = "";
+  }
+  setPinActive(null);
+  setUrlParams({ dest: null, district: null, place: null, trip: null });
+}
+
+function placeCardHtml(place: AdventurePlace): string {
+  const cover = placeCover(place);
+  const sub = [place.area, `${tripsIn(place)} trip${tripsIn(place) === 1 ? "" : "s"}`].filter(Boolean).join(" · ");
+  const chips = place.visits
+    .map(
+      (v) =>
+        `<button type="button" class="adv-trip-chip" data-place="${escapeHtml(place.id)}" data-trip="${escapeHtml(v.id)}">${escapeHtml(tripLabel(v))}</button>`
+    )
+    .join("");
+  return `
+    <article class="adv-zoom-card adv-zoom-card--place" data-place="${escapeHtml(place.id)}" tabindex="0">
+      <span class="adv-zoom-card-img">${cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" />` : ""}</span>
+      <span class="adv-zoom-card-text">
+        <strong>${escapeHtml(place.name)}</strong>
+        <em>${escapeHtml(sub)}</em>
+        <span class="adv-trip-chips">${chips}</span>
+      </span>
+    </article>`;
+}
+
+function renderZoomUi(adv: AdventureDestination): void {
+  const ui = document.getElementById("advZoomUi");
+  if (!ui) return;
+  const places = adv.places ?? [];
+  const counts = districtCounts(adv);
+
+  const crumbs = `
+    <nav class="adv-crumbs" aria-label="Map level">
+      <button type="button" class="adv-crumb-link" data-crumb="india">India</button>
+      <span class="adv-crumb-sep" aria-hidden="true">›</span>
+      ${
+        activeDistrictId
+          ? `<button type="button" class="adv-crumb-link" data-crumb="state">${escapeHtml(adv.state)}</button>
+             <span class="adv-crumb-sep" aria-hidden="true">›</span>
+             <span class="adv-crumb-current">${escapeHtml(districtLabel(activeDistrictId))}</span>`
+          : `<span class="adv-crumb-current">${escapeHtml(adv.state)}</span>`
+      }
+    </nav>`;
+
+  let strip = "";
+  if (activeDistrictId) {
+    const inDistrict = places.filter((p) => p.districtId === activeDistrictId);
+    strip = inDistrict.length
+      ? `<p class="adv-zoom-hint">${inDistrict.length} place${inDistrict.length === 1 ? "" : "s"} in ${escapeHtml(districtLabel(activeDistrictId))} — pick a trip to open it</p>
+         <div class="adv-zoom-cards">${inDistrict.map(placeCardHtml).join("")}</div>`
+      : `<div class="adv-zoom-soon"><strong>No trips in ${escapeHtml(districtLabel(activeDistrictId))} yet</strong>
+         <p>We haven't explored this district together. Maybe on the next one.</p></div>`;
+  } else if (!places.length) {
+    strip = `<div class="adv-zoom-soon"><strong>${adv.status === "completed" ? "Stories on the way" : "Coming soon"}</strong>
+      <p>We haven't taken a group to ${escapeHtml(adv.state)} yet. Join an upcoming trip and put the first pin here.</p>
+      <a class="adv-btn-reel" href="/#trips">See upcoming trips</a></div>`;
+  } else {
+    const districts = Object.keys(counts);
+    const cards = districts
+      .map((id) => {
+        const inD = places.filter((p) => p.districtId === id);
+        const cover = placeCover(inD[0]);
+        return `<button type="button" class="adv-zoom-card adv-zoom-card--district" data-district="${escapeHtml(id)}">
+          <span class="adv-zoom-card-img">${cover ? `<img src="${escapeHtml(cover)}" alt="" loading="lazy" decoding="async" />` : ""}</span>
+          <span class="adv-zoom-card-text"><strong>${escapeHtml(districtLabel(id))}</strong>
+          <em>${inD.length} place${inD.length === 1 ? "" : "s"} · ${counts[id]} trip${counts[id] === 1 ? "" : "s"}</em></span></button>`;
+      })
+      .join("");
+    const loose = places.filter((p) => !p.districtId).map(placeCardHtml).join("");
+    strip = `<p class="adv-zoom-hint">${
+      stateMeta ? "Tap a district on the map, or pick one below" : "Pick a place below"
+    }</p><div class="adv-zoom-cards">${cards}${loose}</div>`;
+  }
+
+  ui.innerHTML = `${crumbs}<div class="adv-zoom-strip">${strip}</div>`;
+  ui.hidden = false;
+  bindZoomUi(ui, adv);
+}
+
+function bindZoomUi(ui: HTMLElement, adv: AdventureDestination): void {
+  ui.querySelectorAll<HTMLElement>("[data-crumb]").forEach((btn) =>
+    btn.addEventListener("click", () => (btn.dataset.crumb === "india" ? zoomOut() : selectDistrict(null)))
+  );
+  ui.querySelectorAll<HTMLElement>(".adv-zoom-card--district").forEach((card) =>
+    card.addEventListener("click", () => selectDistrict(card.dataset.district ?? null))
+  );
+  ui.querySelectorAll<HTMLElement>(".adv-trip-chip").forEach((chip) =>
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const place = adv.places?.find((p) => p.id === chip.dataset.place);
+      if (place) openPlace(adv, place, chip.dataset.trip ?? null);
+    })
+  );
+  ui.querySelectorAll<HTMLElement>(".adv-zoom-card--place").forEach((card) => {
+    const open = () => {
+      const place = adv.places?.find((p) => p.id === card.dataset.place);
+      if (place) openPlace(adv, place, null);
+    };
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") open();
+    });
+  });
+}
+
+/** Build the single-trip shape the journal renderer expects from one place (all trips, or one). */
+function placeAsAdventure(adv: AdventureDestination, place: AdventurePlace, visitId: string | null): AdventureDestination {
+  const visits = visitId ? place.visits.filter((v) => v.id === visitId) : place.visits;
+  const photos = visits.flatMap((v) => v.photos ?? []);
+  const first = visits[0];
+  const dates = visits.length === 1 ? first?.dates ?? "" : visits.length > 1 ? `${visits.length} trips` : "";
+  return {
+    ...adv,
+    id: `${adv.id}:${place.id}`,
+    title: place.name,
+    status: "completed",
+    tripLabel: place.tagline,
+    tripMeta: first?.tripMeta,
+    dates,
+    travelers: visits.reduce((n, v) => n + (v.travelers ?? 0), 0),
+    days: visits.length === 1 ? first?.days ?? 0 : 0,
+    photoCountLabel: photos.length ? String(photos.length) : "",
+    heroImage: place.heroImage || photos[0] || adv.heroImage,
+    photos,
+    highlights: visits.flatMap((v) => v.highlights ?? []),
+    testimonials: visits.flatMap((v) => v.testimonials ?? []),
+    story: (visitId ? first?.story : "") || place.description || first?.story || "",
+    reelUrl: first?.reelUrl ?? "",
+    videos: [],
+  };
+}
+
+function renderVisitTabs(place: AdventurePlace, selected: string | null): string {
+  if (place.visits.length < 2) return "";
+  const tab = (id: string | null, label: string) =>
+    `<button type="button" class="adv-visit-tab${id === selected ? " is-active" : ""}" data-visit="${escapeHtml(id ?? "")}">${escapeHtml(label)}</button>`;
+  return `<div class="adv-visit-tabs" role="tablist" aria-label="Trips to ${escapeHtml(place.name)}">
+    ${tab(null, "All trips")}
+    ${place.visits.map((v) => tab(v.id, tripLabel(v))).join("")}
+  </div>`;
+}
+
+function openPlace(adv: AdventureDestination, place: AdventurePlace, visitId: string | null = null): void {
+  const panel = document.getElementById("advDetailPanel");
+  const backdrop = document.getElementById("advDetailBackdrop");
+  const inner = document.getElementById("advDetailInner");
+  if (!panel || !inner) return;
+
+  // jump to the place's district first (this also closes any open journal)
+  if (place.districtId && place.districtId !== activeDistrictId && stateMeta) selectDistrict(place.districtId);
+
+  activeAdventureId = adv.id;
+  activePlaceKey = `${adv.id}:${place.id}`;
+  document.querySelectorAll<HTMLElement>(".adv-zoom-card--place, .adv-place-pin").forEach((el) => {
+    el.classList.toggle("is-active", el.dataset.place === place.id);
+  });
+
+  const synthetic = placeAsAdventure(adv, place, visitId);
+  inner.innerHTML = renderDetailContent(synthetic);
+  const head = inner.querySelector(".adv-detail-head");
+  const trail = [adv.state, place.districtName || districtLabel(place.districtId), place.area].filter(Boolean).join(" › ");
+  head?.insertAdjacentHTML("beforebegin", `<p class="adv-detail-crumb">${escapeHtml(trail)}</p>`);
+  const tabs = renderVisitTabs(place, visitId);
+  if (tabs) head?.insertAdjacentHTML("afterend", tabs);
+  inner.querySelectorAll<HTMLButtonElement>(".adv-visit-tab").forEach((btn) => {
+    btn.addEventListener("click", () => openPlace(adv, place, btn.dataset.visit || null));
+  });
+
+  panel.hidden = false;
+  if (!isDesktopLayout()) backdrop?.removeAttribute("hidden");
+  document.body.classList.add("adv-detail-open");
+  document.getElementById("advMobileHint")?.setAttribute("hidden", "");
+  inner.scrollTop = 0;
+
+  setUrlParams({ dest: adv.id, district: place.districtId || null, place: place.id, trip: visitId });
+  bindDetailEvents(synthetic);
+}
+
+/** Warm the district map for a state before it is clicked, so the zoom never waits on the network. */
+function prefetchState(id: string | undefined): void {
+  const adv = id ? getAdventureById(id) : undefined;
+  if (!adv?.svgStateId) return;
+  void getStateMapMeta(adv.svgStateId).then((meta) => {
+    if (meta) void loadStateMapSvg(meta).catch(() => undefined);
+  });
+}
+
+function prefetchStateMaps(): void {
+  void loadStateMapManifest();
+  const handler = (e: Event): void => {
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-dest]");
+    prefetchState(el?.dataset.dest);
+  };
+  ["pointerover", "focusin", "touchstart"].forEach((ev) =>
+    document.addEventListener(ev, handler, { passive: true })
+  );
+  // completed states are the likely first click: warm them right away, when the browser is idle
+  const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 600));
+  idle(() => PREVIOUS_ADVENTURES.filter((a) => a.status === "completed").forEach((a) => prefetchState(a.id)));
 }

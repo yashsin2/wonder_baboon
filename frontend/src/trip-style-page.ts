@@ -1,3 +1,4 @@
+import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js";
 import {
   API_BASE_URL,
   createWbModal,
@@ -14,7 +15,11 @@ import {
 } from "./config.js";
 import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
 import {
+  bookingDateFieldHtml,
   bookingModalActionsHtml,
+  collectExtraTravelers,
+  extraTravelerBlocksHtml,
+  wireExtraTravelerMobiles,
   guestBookingFieldsHtml,
   setupBookingPaymentUi,
   submitBookingAndPay,
@@ -121,11 +126,10 @@ function openBookingModal(trip: Trip): void {
   const minDate = todayIso();
   const guestFields = isLoggedIn ? "" : guestBookingFieldsHtml();
   const body = `
-    <p class="muted">${trip.title} · ${trip.location} · ${trip.durationLabel}</p>
+    <p class="muted">${escapeHtml(trip.title)} · ${escapeHtml(trip.location)} · ${escapeHtml(trip.durationLabel)}</p>
     <form id="bk_form" novalidate>
       ${guestFields}
-      <label>Date of travel *</label>
-      <input id="bk_date" type="date" required value="${defaultDate}" min="${minDate}" />
+      ${bookingDateFieldHtml(trip, minDate, defaultDate)}
       <label>Number of people *</label>
       <input id="bk_people" type="number" min="1" max="20" value="1" required />
       <div id="bk_extras_wrap" class="bk-extras-wrap" aria-live="polite"></div>
@@ -142,13 +146,8 @@ function openBookingModal(trip: Trip): void {
     const n = Number(peopleEl.value);
     const count = Number.isFinite(n) && n >= 1 ? Math.min(20, Math.floor(n)) : 1;
     const needExtras = Math.max(0, count - 1);
-    extrasWrap.innerHTML = "";
-    if (needExtras === 0) return;
-    let html = "";
-    for (let i = 0; i < needExtras; i++) {
-      html += `<label>Traveler ${i + 2} full name *</label><input type="text" class="bk-extra-traveler" required minlength="2" autocomplete="name" />`;
-    }
-    extrasWrap.innerHTML = html;
+    extrasWrap.innerHTML = extraTravelerBlocksHtml(needExtras);
+    wireExtraTravelerMobiles(extrasWrap);
   };
   syncBookingExtras();
   peopleEl?.addEventListener("input", syncBookingExtras);
@@ -158,11 +157,9 @@ function openBookingModal(trip: Trip): void {
     const date = (modal.querySelector("#bk_date") as HTMLInputElement).value;
     const people = Number((modal.querySelector("#bk_people") as HTMLInputElement).value);
     const needExtras = Math.max(0, Math.min(19, people - 1));
-    const extraNames = Array.from(modal.querySelectorAll<HTMLInputElement>(".bk-extra-traveler")).map((el) =>
-      el.value.trim(),
-    );
-    if (extraNames.length !== needExtras || (needExtras > 0 && extraNames.some((s) => s.length < 2))) {
-      showMessagePopup("Please fill every additional traveler's name.", "error");
+    const { contacts: extras, error: extrasError } = collectExtraTravelers(modal, needExtras);
+    if (extrasError) {
+      showMessagePopup(extrasError, "error");
       return;
     }
     if (!isLoggedIn && !validateGuestBookingFields(modal).ok) return;
@@ -192,7 +189,7 @@ function openBookingModal(trip: Trip): void {
     void submitBookingAndPay(modal, trip, paymentKind, {
       date,
       people,
-      extraNames,
+      extras,
       isLoggedIn,
       token,
       onBusy: setBusy,
@@ -306,7 +303,6 @@ function renderIntro(): void {
     <div class="trip-style-page-intro">${renderStyleIntroHtml(styleConfig)}</div>`;
   }
 
-  document.title = `${styleConfig.title} · Wonder Baboon`;
   const headerTitle = document.getElementById("stylePageHeaderTitle");
   if (headerTitle) headerTitle.textContent = styleConfig.shortLabel;
 }
@@ -340,6 +336,7 @@ async function loadStyleTrips(): Promise<void> {
       (trip) => normalizeTripStyle(trip.tripStyle) === normalizeTripStyle(styleSlug),
     );
     renderTripsGrid(styleTrips);
+    setJsonLd("ld-trips", tripsToJsonLd(styleTrips, `${SITE_ORIGIN}${window.location.pathname.replace(/\/$/, "")}`, `${styleConfig.title} trips by Wonder Baboon`));
   } catch (error) {
     if (grid) {
       grid.innerHTML = `<div class="style-trips-empty"><p>${escapeHtml(error instanceof Error ? error.message : "Could not load trips")}</p></div>`;

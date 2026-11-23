@@ -11,12 +11,16 @@ ENV = os.getenv("ENV", "development").lower()
 IS_PRODUCTION = ENV == "production"
 
 MONGO_URI = os.getenv("MONGO_URI", "")
+TRAVEL_GALLERY_COLLECTION = os.getenv("TRAVEL_GALLERY_COLLECTION", "TravelGalary").strip() or "TravelGalary"
 
 JWT_SECRET = os.getenv("JWT_SECRET", "")
 if not JWT_SECRET:
   if IS_PRODUCTION:
     raise RuntimeError("JWT_SECRET must be set in production")
   JWT_SECRET = secrets.token_urlsafe(48)
+
+if IS_PRODUCTION and len(JWT_SECRET) < 32:
+  raise RuntimeError("JWT_SECRET must be at least 32 characters when ENV=production")
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "12"))
@@ -32,6 +36,10 @@ if IS_PRODUCTION:
     raise RuntimeError("ADMIN_PASSWORD must be at least 12 characters when ENV=production")
   if ADMIN_PASSWORD == DEV_DEFAULT_ADMIN_PASSWORD:
     raise RuntimeError("ADMIN_PASSWORD cannot use the development default when ENV=production")
+
+# How many reverse proxies sit in front of the API (nginx/Cloudflare = 1). Used to pick the real
+# client IP from X-Forwarded-For without trusting values the visitor can forge. 0 = ignore the header.
+TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1" if IS_PRODUCTION else "0"))
 
 PORT = int(os.getenv("PORT", "5051"))
 HOST = os.getenv("HOST", "0.0.0.0")
