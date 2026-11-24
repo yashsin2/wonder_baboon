@@ -549,6 +549,9 @@ function renderTrip(place: Place, trip: Trip): string {
     <h5 class="gallery-sub">Photos</h5>
     <div class="form-group">
       <label>Add photos by file name</label>
+      <label class="btn-second gallery-upload-btn">📂 Choose photos from computer
+        <input type="file" data-pick-names accept="image/*" multiple hidden /></label>
+      <small class="form-hint">Picking only reads the file names — nothing is uploaded here.</small>
       <textarea data-photo-names rows="2" placeholder="jibhi-1.jpg, jibhi-2.jpg   (or one per line)"></textarea>
       <small class="form-hint">Upload the pictures to your site's <b>assets</b> folder on Hostinger first (a sub-folder is fine, e.g. <code>Himachal/jibhi-1.jpg</code>), then type the names here. ★ sets the place cover.</small>
       <button type="button" class="btn-second" data-action="add-photos">+ Add these photos</button>
@@ -787,6 +790,9 @@ function wizStepTrip(): string {
     <h5 class="gallery-sub">Photos</h5>
     <div class="form-group">
       <label>Photo file names (optional)</label>
+      <label class="btn-second gallery-upload-btn">📂 Choose photos from computer
+        <input type="file" id="wizPickFiles" accept="image/*" multiple hidden /></label>
+      <small class="form-hint">Picking only reads the file names — nothing is uploaded here.</small>
       <textarea id="wizPhotos" rows="3" placeholder="jibhi-1.jpg, jibhi-2.jpg   (or one per line)">${esc(draft.photoNames)}</textarea>
       <small class="form-hint">Upload the pictures to your site's <b>assets</b> folder on Hostinger first (a sub-folder is fine, e.g. <code>Himachal/jibhi-1.jpg</code>), then type the names here. We check each one exists before publishing.</small>
     </div>`;
@@ -896,10 +902,10 @@ async function wizardPublish(): Promise<void> {
   };
   try {
     setBusy("Checking photos…");
-    const checked = await checkPhotoNames(draft.photoNames);
+    const checked = await checkPhotoNames(draft.photoNames, st);
     if (checked.missing.length) {
       draft.busy = "";
-      draft.error = `These photos weren't found on the site: ${checked.missing.join(", ")}. Upload them to the assets folder (or fix the name) and press Publish again.`;
+      draft.error = `These photos weren't found on the site: ${checked.missing.join(", ")}. Make sure they are uploaded inside the assets folder (a sub-folder named like the state is fine) and the name matches, then press Publish again.`;
       render();
       return;
     }
@@ -955,13 +961,8 @@ async function wizardPublish(): Promise<void> {
 
 /* ───────────── photos / API helpers ───────────── */
 
-/** "jibhi-1.jpg" → "/assets/jibhi-1.jpg"; "Himachal/a.jpg" → "/assets/Himachal/a.jpg"; full http(s) URLs are kept. */
-function photoPathFromName(raw: string): string {
-  const t = raw.trim();
-  if (/^https?:\/\//i.test(t)) return t;
-  let path = t.replace(/^\.?\//, "").replace(/^assets\//i, "");
-  path = path.replace(/\.\.+\//g, "");
-  return `/assets/${path}`;
+function cleanName(raw: string): string {
+  return raw.trim().replace(/^\.?\//, "").replace(/^assets\//i, "").replace(/\.\.+\//g, "");
 }
 
 function parsePhotoNames(text: string): string[] {
@@ -970,14 +971,25 @@ function parsePhotoNames(text: string): string[] {
     .split(/[\n,;]+/)
     .map((x) => x.trim())
     .filter(Boolean)
-    .forEach((n) => seen.add(photoPathFromName(n)));
+    .forEach((n) => seen.add(/^https?:\/\//i.test(n) ? n : cleanName(n)));
   return Array.from(seen);
 }
 
-function photoExists(path: string): Promise<boolean> {
+/** Places a typed name may live: assets/, assets/<State>/, assets/gallery/…, with .jpg/.JPG case variants. */
+function photoCandidates(name: string, stateName: string, stateId: string): string[] {
+  if (/^https?:\/\//i.test(name)) return [name];
+  const folders = name.includes("/") ? [""] : ["", `${stateName}/`, `${stateId}/`, `${stateName.replace(/\s+/g, "")}/`, "gallery/", `gallery/${stateId}/`];
+  const m = name.match(/^(.*)\.([A-Za-z0-9]+)$/);
+  const names = m ? [name, `${m[1]}.${m[2].toLowerCase()}`, `${m[1]}.${m[2].toUpperCase()}`] : [name];
+  const out: string[] = [];
+  folders.forEach((f) => names.forEach((n) => out.push(`/assets/${f}${n}`)));
+  return Array.from(new Set(out));
+}
+
+function imageLoads(path: string): Promise<boolean> {
   return new Promise((resolve) => {
     const img = new Image();
-    const timer = window.setTimeout(() => resolve(false), 12000);
+    const timer = window.setTimeout(() => resolve(false), 8000);
     img.onload = () => {
       window.clearTimeout(timer);
       resolve(true);
@@ -990,10 +1002,30 @@ function photoExists(path: string): Promise<boolean> {
   });
 }
 
-async function checkPhotoNames(text: string): Promise<{ ok: string[]; missing: string[] }> {
-  const paths = parsePhotoNames(text);
-  const found = await Promise.all(paths.map(photoExists));
-  return { ok: paths.filter((_, i) => found[i]), missing: paths.filter((_, i) => !found[i]).map((p) => p.replace(/^\/assets\//, "")) };
+async function resolvePhoto(name: string, stateName: string, stateId: string): Promise<string | null> {
+  for (const path of photoCandidates(name, stateName, stateId)) {
+    if (await imageLoads(path)) return path;
+  }
+  return null;
+}
+
+async function checkPhotoNames(text: string, st?: { state?: string; id?: string } | null): Promise<{ ok: string[]; missing: string[] }> {
+  const names = parsePhotoNames(text);
+  const stateName = (st?.state ?? "").trim();
+  const stateId = (st?.id ?? "").trim();
+  const found = await Promise.all(names.map((n) => resolvePhoto(n, stateName, stateId)));
+  return {
+    ok: Array.from(new Set(found.filter((x): x is string => !!x))),
+    missing: names.filter((_, i) => !found[i]),
+  };
+}
+
+/** Append file names picked from the computer to a names box (nothing is uploaded — only the names are used). */
+function appendPickedNames(box: HTMLTextAreaElement, files: FileList | null): void {
+  const names = Array.from(files ?? []).map((f) => f.name);
+  if (!names.length) return;
+  const existing = box.value.trim();
+  box.value = (existing ? existing + (existing.endsWith(",") ? " " : ", ") : "") + names.join(", ");
 }
 
 async function run(task: () => Promise<void>): Promise<void> {
@@ -1009,7 +1041,7 @@ async function addPhotosFromNames(card: HTMLElement): Promise<void> {
   const place = currentPlace();
   const box = card.querySelector<HTMLTextAreaElement>("[data-photo-names]");
   if (!state || !place || !box) return;
-  const { ok, missing } = await checkPhotoNames(box.value);
+  const { ok, missing } = await checkPhotoNames(box.value, state);
   if (!ok.length && !missing.length) {
     toast("Type at least one photo file name first.", true);
     return;
@@ -1330,7 +1362,19 @@ function bindOnce(host: HTMLElement): void {
 
   host.addEventListener("change", (event) => {
     const input = event.target as HTMLInputElement;
-    if (input.id === "wizSkipPin") {
+    if (input.matches("[data-pick-names]")) {
+      const box = input.closest(".form-group")?.querySelector<HTMLTextAreaElement>("[data-photo-names]");
+      if (box) appendPickedNames(box, input.files);
+      input.value = "";
+    } else if (input.id === "wizPickFiles") {
+      captureWizardInputs();
+      const tmp = document.createElement("textarea");
+      tmp.value = draft.photoNames;
+      appendPickedNames(tmp, input.files);
+      draft.photoNames = tmp.value;
+      input.value = "";
+      render();
+    } else if (input.id === "wizSkipPin") {
       captureWizardInputs();
       if (draft.skipPin) draft.error = "";
     } else if (input.id === "gpDistrict") {

@@ -1,10 +1,10 @@
-import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js?v=dd3cea4";
-import { API_BASE_URL, attachSmoothScroll, createWbModal, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js?v=dd3cea4";
-import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js?v=dd3cea4";
-import { bookingDateFieldHtml, bookingModalActionsHtml, collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js?v=dd3cea4";
-import { mountHomePreviousTravels } from "./home-previous-travels.js?v=dd3cea4";
-import { fetchRazorpayConfig } from "./razorpay-checkout.js?v=dd3cea4";
-import { TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js?v=dd3cea4";
+import { SITE_ORIGIN, setJsonLd, tripsToJsonLd } from "./seo.js";
+import { API_BASE_URL, attachSmoothScroll, createWbModal, getSession, isUpcomingTravelDate, logger, normalizeImageUrl, parseError, parseTravelDate, showMessagePopup, updateHeaderAuth, } from "./config.js";
+import { getItineraryHtmlForTrip, tripHasItineraryForTrip } from "./trip-itineraries.js";
+import { bookingDateFieldHtml, bookingModalActionsHtml, collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, guestBookingFieldsHtml, setupBookingPaymentUi, submitBookingAndPay, validateGuestBookingFields, wireBookingMobileField, } from "./booking-form.js";
+import { mountHomePreviousTravels } from "./home-previous-travels.js";
+import { fetchRazorpayConfig } from "./razorpay-checkout.js";
+import { TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 let tripsSwiper = null;
 const mobileMenuBtn = document.querySelector(".mobile-menu-btn");
 const navLinks = document.querySelector(".nav-links");

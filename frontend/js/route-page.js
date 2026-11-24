@@ -1,6 +1,6 @@
-import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js?v=dd3cea4";
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, logger, parseError, saveSession, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js?v=dd3cea4";
-import { getItineraryHtml } from "./trip-itineraries.js?v=dd3cea4";
+import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js";
+import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, logger, parseError, saveSession, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js";
+import { getItineraryHtml } from "./trip-itineraries.js";
 const page = (document.body.dataset.page || "");
 function authHeaders() {
     const { token } = getSession();

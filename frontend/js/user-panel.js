@@ -1,4 +1,4 @@
-import { clearSession, getSession, ROUTES, showSuccessModal, } from "./config.js?v=dd3cea4";
+import { clearSession, getSession, ROUTES, showSuccessModal, } from "./config.js";
 const panel = document.getElementById("userPanel");
 const greetingEl = document.getElementById("panelGreeting");
 const titleEl = document.getElementById("panelTitle");

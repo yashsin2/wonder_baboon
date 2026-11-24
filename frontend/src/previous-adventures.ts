@@ -152,10 +152,18 @@ function renderDetailContent(adv: AdventureDestination): string {
       </blockquote>`
     : "";
 
-  const reelBtn =
-    adv.reelUrl && /^https?:\/\//i.test(adv.reelUrl.trim())
-      ? `<a class="adv-btn-reel" href="${escapeHtml(adv.reelUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span> Watch Trip Reel</a>`
-      : `<button type="button" class="adv-btn-reel" id="advWatchReel"><span aria-hidden="true">▶</span> Watch Trip Reel</button>`;
+  const hasReelLink = !!adv.reelUrl && /^https?:\/\//i.test(adv.reelUrl.trim());
+  const reelInner = `<img class="adv-reel-bg" src="${escapeHtml(getGalleryHeroImage(adv))}" alt="" loading="lazy" decoding="async" />
+      <span class="adv-reel-play" aria-hidden="true">▶</span>
+      <span class="adv-reel-cap">Watch Trip Reel<small>${escapeHtml(adv.title)}</small></span>`;
+  const reelSection = `<section class="adv-detail-section adv-detail-section--reel">
+      <h4 class="adv-section-title">Trip Reel</h4>
+      ${
+        hasReelLink
+          ? `<a class="adv-reel-card" href="${escapeHtml(adv.reelUrl as string)}" target="_blank" rel="noopener noreferrer" aria-label="Watch trip reel">${reelInner}</a>`
+          : `<button type="button" class="adv-reel-card" id="advWatchReel" aria-label="Watch trip reel">${reelInner}</button>`
+      }
+    </section>`;
 
   reviewPageCount = adv.testimonials?.length ?? 0;
   reviewPageIndex = 0;
@@ -171,9 +179,9 @@ function renderDetailContent(adv: AdventureDestination): string {
     </div>
     ${story}
     ${highlights}
+    ${reelSection}
     ${reviewBook}
     <div class="adv-detail-actions">
-      ${reelBtn}
       <button type="button" class="adv-link-memories" id="advViewAllPhotos" ${adv.photos.length < 2 ? "hidden" : ""}>View All Memories →</button>
     </div>
   `;

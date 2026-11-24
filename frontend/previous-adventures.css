@@ -2164,3 +2164,99 @@ body[data-page="adventures"] .nav-links a.is-active {
   .adv-map-zoom, .adv-state-map-inner { transition: none; }
   .adv-zoom-ui, .adv-zoom-strip > *, .adv-zoom-cards > * { animation: none; }
 }
+
+/* ── Unified journal sections: Highlights · Trip Reel · Traveler Stories ── */
+.adv-detail-section {
+  margin-bottom: 20px;
+  padding: 14px 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdf8 0%, #f8f1e1 100%);
+  border: 1px solid rgba(139, 115, 85, 0.22);
+  box-shadow: 0 6px 16px rgba(44, 36, 25, 0.08), inset 0 1px 0 #fff;
+}
+.adv-section-title {
+  font-family: "Libre Baskerville", Georgia, serif;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+.adv-highlights { gap: 10px; }
+.adv-highlight-card {
+  border-radius: 10px;
+  border: 3px solid #fffdf8;
+  box-shadow: 0 5px 12px rgba(44, 36, 25, 0.22);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.adv-highlight-card:nth-child(odd) { transform: rotate(-1.2deg); }
+.adv-highlight-card:nth-child(even) { transform: rotate(1deg); }
+.adv-highlight-card:hover { transform: rotate(0) translateY(-3px); box-shadow: 0 10px 20px rgba(44, 36, 25, 0.3); }
+
+.adv-reel-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 8;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  border-radius: 10px;
+  border: 3px solid #fffdf8;
+  background: #2c2419;
+  box-shadow: 0 5px 12px rgba(44, 36, 25, 0.22);
+  font-family: inherit;
+  text-decoration: none;
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.adv-reel-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px rgba(44, 36, 25, 0.3); }
+.adv-reel-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: brightness(0.7); }
+.adv-reel-play {
+  position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%);
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center; padding-left: 4px;
+  font-size: 1.2rem; color: var(--adv-ink);
+  background: var(--adv-gold);
+  box-shadow: 0 0 0 6px rgba(255, 253, 248, 0.35), 0 6px 16px rgba(0, 0, 0, 0.4);
+  transition: transform 0.25s ease;
+}
+.adv-reel-card:hover .adv-reel-play { transform: translate(-50%, -50%) scale(1.1); }
+.adv-reel-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 8px 8px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  color: #fff; text-align: center; font-size: 0.74rem; font-weight: 700; line-height: 1.25;
+}
+.adv-reel-cap small { display: block; font-weight: 500; opacity: 0.8; font-size: 0.62rem; }
+
+/* Review book — leather cover, stitching, ribbon, ruled paper */
+.adv-diary-closed-cover {
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(255, 220, 160, 0.16), transparent 55%),
+    repeating-linear-gradient(45deg, rgba(0, 0, 0, 0.05) 0 2px, transparent 2px 5px),
+    linear-gradient(160deg, #6b3f22 0%, #4a2a15 55%, #2e190c 100%);
+  border-left: 10px solid #25130a;
+}
+.adv-diary-closed-cover::before {
+  content: ""; position: absolute; inset: 9px 9px 9px 7px;
+  border: 1.5px dashed rgba(235, 200, 130, 0.55); border-radius: 4px; pointer-events: none;
+}
+.adv-diary-closed-cover::after {
+  content: ""; position: absolute; top: -4px; right: 22px; width: 14px; height: 46%;
+  background: linear-gradient(90deg, #8c1d1d, #b32626 50%, #8c1d1d);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 84%, 0 100%);
+  box-shadow: 2px 3px 4px rgba(0, 0, 0, 0.35);
+}
+.adv-diary-closed-label {
+  color: #f0d58a;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 8px rgba(240, 213, 138, 0.25);
+}
+.adv-diary-closed-cover .adv-diary-cover-map { color: #f0d58a; opacity: 0.55; }
+.adv-diary-leaf {
+  background:
+    linear-gradient(90deg, transparent 30px, rgba(190, 70, 70, 0.28) 30px 31px, transparent 31px),
+    repeating-linear-gradient(transparent, transparent 25px, rgba(80, 110, 150, 0.16) 25px, rgba(80, 110, 150, 0.16) 26px),
+    radial-gradient(ellipse at 20% 0%, rgba(255, 252, 245, 0.9) 0%, transparent 55%),
+    linear-gradient(168deg, #fbf7ec 0%, #f1e8d6 55%, #e9ddc8 100%);
+}
+.adv-review-book-sheet { padding-left: 38px; }
+.adv-review-book-quote p { font-size: 0.78rem; line-height: 26px; }
+.adv-review-book-byline {
+  background: transparent; border: none; box-shadow: none; padding: 4px 0 0; justify-content: flex-end;
+}

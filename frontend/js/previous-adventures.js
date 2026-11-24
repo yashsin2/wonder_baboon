@@ -1,8 +1,8 @@
-import { galleryToJsonLd, setJsonLd, setPageSeo } from "./seo.js?v=dd3cea4";
-import { INDIA_MAP_VIEWBOX, mountIndiaMap, pinToPercent, setHighlightedState } from "./india-map.js?v=dd3cea4";
-import { getAdventureById, getGalleryHeroImage, getGalleryMapPin, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES, } from "./previous-adventures-data.js?v=dd3cea4";
-import { updateHeaderAuth } from "./config.js?v=dd3cea4";
-import { districtFromTarget, getStateMapMeta, loadStateMapManifest, loadStateMapSvg, markDistricts, mountStateMap, projectLatLng, } from "./state-maps.js?v=dd3cea4";
+import { galleryToJsonLd, setJsonLd, setPageSeo } from "./seo.js";
+import { INDIA_MAP_VIEWBOX, mountIndiaMap, pinToPercent, setHighlightedState } from "./india-map.js";
+import { getAdventureById, getGalleryHeroImage, getGalleryMapPin, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES, } from "./previous-adventures-data.js";
+import { updateHeaderAuth } from "./config.js";
+import { districtFromTarget, getStateMapMeta, loadStateMapManifest, loadStateMapSvg, markDistricts, mountStateMap, projectLatLng, } from "./state-maps.js";
 function escapeHtml(text) {
     return text
         .replace(/&/g, "&amp;")
@@ -124,9 +124,16 @@ function renderDetailContent(adv) {
         <p>${escapeHtml(adv.story)}</p>
       </blockquote>`
         : "";
-    const reelBtn = adv.reelUrl && /^https?:\/\//i.test(adv.reelUrl.trim())
-        ? `<a class="adv-btn-reel" href="${escapeHtml(adv.reelUrl)}" target="_blank" rel="noopener noreferrer"><span aria-hidden="true">▶</span> Watch Trip Reel</a>`
-        : `<button type="button" class="adv-btn-reel" id="advWatchReel"><span aria-hidden="true">▶</span> Watch Trip Reel</button>`;
+    const hasReelLink = !!adv.reelUrl && /^https?:\/\//i.test(adv.reelUrl.trim());
+    const reelInner = `<img class="adv-reel-bg" src="${escapeHtml(getGalleryHeroImage(adv))}" alt="" loading="lazy" decoding="async" />
+      <span class="adv-reel-play" aria-hidden="true">▶</span>
+      <span class="adv-reel-cap">Watch Trip Reel<small>${escapeHtml(adv.title)}</small></span>`;
+    const reelSection = `<section class="adv-detail-section adv-detail-section--reel">
+      <h4 class="adv-section-title">Trip Reel</h4>
+      ${hasReelLink
+        ? `<a class="adv-reel-card" href="${escapeHtml(adv.reelUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Watch trip reel">${reelInner}</a>`
+        : `<button type="button" class="adv-reel-card" id="advWatchReel" aria-label="Watch trip reel">${reelInner}</button>`}
+    </section>`;
     reviewPageCount = adv.testimonials?.length ?? 0;
     reviewPageIndex = 0;
     return `
@@ -140,9 +147,9 @@ function renderDetailContent(adv) {
     </div>
     ${story}
     ${highlights}
+    ${reelSection}
     ${reviewBook}
     <div class="adv-detail-actions">
-      ${reelBtn}
       <button type="button" class="adv-link-memories" id="advViewAllPhotos" ${adv.photos.length < 2 ? "hidden" : ""}>View All Memories →</button>
     </div>
   `;

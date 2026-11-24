@@ -7280,3 +7280,34 @@ body[data-trip-style] .logo .logo-text {
 .fc-body a { overflow-wrap: anywhere; font-weight: 600; text-decoration: none; }
 .fc-body a:hover, .fc-body a:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 768px) { .footer-contact-list { justify-items: center; } .footer-contact-list li { text-align: left; } }
+
+/* iPhone: stop pinch-zoom drift and the auto-zoom Safari applies when focusing small inputs */
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; overflow-x: hidden; }
+body { overflow-x: hidden; }
+@media (max-width: 900px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* Small-screen safety: nothing may push past the viewport */
+.travel-style, .travel-style-content { max-width: 100%; box-sizing: border-box; }
+.travel-style-content h2 {
+  font-size: clamp(1.35rem, 6vw, 2.4rem);
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  text-wrap: balance;
+}
+h1, h2, h3, h4, p, li, blockquote, a, span { overflow-wrap: break-word; }
+img, video, svg, iframe, canvas { max-width: 100%; }
+section, .container, main { max-width: 100%; }
+@media (max-width: 600px) {
+  .travel-style-content { padding-left: 16px; padding-right: 16px; }
+}
+.travel-style h2 {
+  display: block;
+  white-space: normal;
+  font-size: clamp(1.3rem, 5.6vw, 2.25rem);
+  padding: 0 4px;
+}
+.travel-style h2::before, .travel-style h2::after { display: inline; white-space: nowrap; }

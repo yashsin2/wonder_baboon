@@ -1,5 +1,5 @@
-import { API_BASE_URL, getSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js?v=dd3cea4";
-import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js?v=dd3cea4";
+import { API_BASE_URL, getSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js";
+import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js";
 export function guestBookingFieldsHtml() {
     return `
       <label for="bk_name">Full name *</label>

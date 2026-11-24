@@ -1,6 +1,6 @@
-import { durationWords, prettyRange, todayIso, wireDateRange } from "./date-range.js?v=dd3cea4";
-import { showToast } from "./admin-ui.js?v=dd3cea4";
-import { TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js?v=dd3cea4";
+import { durationWords, prettyRange, todayIso, wireDateRange } from "./date-range.js";
+import { showToast } from "./admin-ui.js";
+import { TRIP_STYLE_ORDER, TRIP_STYLES } from "./trip-styles.js";
 /**
  * Admin → Add trip: a sectioned form with a live trip-card preview.
  *  • start date can't be in the past; end date can't be before start (and opens on the right month)
