@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js?v=20261125144352";
+import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js?v=20261125171901";
 const MOODS = ["Emotional", "Funny", "Adventure", "Food", "Soul-searching", "Budget tips"];
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
@@ -198,17 +198,13 @@ function photosHtml(post) {
     const imgs = post.images;
     if (!imgs.length)
         return "";
-    const shown = imgs.slice(0, 4);
-    const extra = imgs.length - shown.length;
-    const tiles = shown
-        .map((img, i) => {
-        const more = i === shown.length - 1 && extra > 0 ? `<span class="cf-photo-count">+${extra}</span>` : "";
-        return `<button type="button" class="cf-photo" data-act="open" data-index="${i}" aria-label="Open photo ${i + 1} of ${imgs.length}">
-        <img src="${safeUrl(img.thumb)}" alt="${esc(img.caption || post.title)}" width="${num(img.w)}" height="${num(img.h)}" loading="lazy" decoding="async" />${more}
-      </button>`;
-    })
+    const tiles = imgs
+        .map((img, i) => `<button type="button" class="cf-photo" data-act="open" data-index="${i}" aria-label="Open photo ${i + 1} of ${imgs.length}">
+        <img src="${safeUrl(img.thumb)}" alt="${esc(img.caption || post.title)}" width="${num(img.w)}" height="${num(img.h)}" loading="lazy" decoding="async" />
+      </button>`)
         .join("");
-    return `<div class="cf-photos cf-photos--${shown.length}">${tiles}</div>`;
+    const counter = imgs.length > 1 ? `<span class="cf-photo-count" data-photo-count>1/${imgs.length}</span>` : "";
+    return `<div class="cf-photos-wrap"><div class="cf-photos cf-photos--${imgs.length}">${tiles}</div>${counter}</div>`;
 }
 function postHtml(p) {
     const excerpt = esc(p.excerpt ?? "");
@@ -457,6 +453,21 @@ async function editPost(id) {
     cache.set(full.id, { ...(cache.get(full.id) ?? full), ...full });
     openComposer(full);
 }
+// `scroll` doesn't bubble, but it IS still intercepted during the capture phase on an
+// ancestor — so one listener here covers the swipeable photo strip on every post card,
+// instead of wiring up a separate listener per card.
+postsEl.addEventListener("scroll", (event) => {
+    const strip = event.target;
+    if (!strip.classList?.contains("cf-photos"))
+        return;
+    const counter = strip.nextElementSibling;
+    if (!counter || !counter.hasAttribute("data-photo-count"))
+        return;
+    const width = strip.clientWidth || 1;
+    const index = Math.round(strip.scrollLeft / width) + 1;
+    const total = strip.children.length;
+    counter.textContent = `${Math.min(index, total)}/${total}`;
+}, true);
 postsEl.addEventListener("click", (event) => {
     const target = event.target.closest("[data-act]");
     const card = event.target.closest(".cf-post");

@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js?v=20261125144352";
+import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js?v=20261125171901";
 /** ?next=/the-quibbler returns the user to where they came from; only same-site relative paths are honoured. */
 function postLoginTarget(fallback) {
     const next = new URLSearchParams(window.location.search).get("next") || "";

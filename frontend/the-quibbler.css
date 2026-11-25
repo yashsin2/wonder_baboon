@@ -355,34 +355,39 @@ body.cf {
 }
 
 /* photos */
+.cf-photos-wrap {
+  position: relative;
+}
+
+/* Swipe strip, Instagram-style — one photo fills the width at a time, swipe left/right
+   between them, rather than packing several into a fixed collage grid. */
 .cf-photos {
-  display: grid;
-  gap: 4px;
-  overflow: hidden;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   border-radius: var(--cf-radius);
   background: var(--cf-border);
 }
 
-.cf-photos--2,
-.cf-photos--3,
-.cf-photos--4,
-.cf-photos--5,
-.cf-photos--6 {
-  grid-template-columns: 1fr 1fr;
-}
-
-.cf-photos--3 .cf-photo:first-child,
-.cf-photos--5 .cf-photo:first-child {
-  grid-column: 1 / -1;
+.cf-photos::-webkit-scrollbar {
+  display: none;
 }
 
 .cf-photo {
   position: relative;
   display: block;
+  flex: 0 0 100%;
+  width: 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
   padding: 0;
   border: 0;
   background: var(--cf-border);
   overflow: hidden;
+  aspect-ratio: 1;
 }
 
 .cf-photo img {
@@ -393,22 +398,13 @@ body.cf {
   filter: brightness(1.03) saturate(1.1) sepia(0.12);
 }
 
+.cf-photos--1 .cf-photo {
+  aspect-ratio: auto;
+}
+
 .cf-photos--1 .cf-photo img {
   height: auto;
   max-height: 520px;
-}
-
-.cf-photos--2 .cf-photo,
-.cf-photos--4 .cf-photo,
-.cf-photos--6 .cf-photo,
-.cf-photos--3 .cf-photo:not(:first-child),
-.cf-photos--5 .cf-photo:not(:first-child) {
-  aspect-ratio: 1;
-}
-
-.cf-photos--3 .cf-photo:first-child,
-.cf-photos--5 .cf-photo:first-child {
-  aspect-ratio: 16 / 9;
 }
 
 .cf-photo-count {
@@ -621,6 +617,7 @@ body.cf {
   position: sticky;
   top: 0;
   z-index: 2;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -684,6 +681,11 @@ body.cf {
 
 /* reader */
 .cf-reader-gallery {
+  /* flex-shrink: 0 matters here: .cf-sheet is a column flex container, and a flex item that
+     (like this one) sets overflow-x to something other than visible gets an automatic minimum
+     size of 0 by spec — so without this, the flex layout was free to squeeze the whole gallery
+     down to zero height under space pressure, making every story's photos invisible. */
+  flex-shrink: 0;
   display: flex;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
@@ -717,6 +719,7 @@ body.cf {
 }
 
 .cf-reader-body {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -754,6 +757,7 @@ body.cf {
 }
 
 .cf-reader-actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -775,6 +779,7 @@ body.cf {
 
 /* comments */
 .cf-comments {
+  flex-shrink: 0;
   padding: 20px clamp(18px, 5vw, 48px) 28px;
   border-top: 1px solid var(--cf-border);
 }

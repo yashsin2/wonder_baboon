@@ -1,4 +1,4 @@
-import { API_BASE_URL, ROUTES, getSession, saveSession, parseError, showMessagePopup, mountWbModal, } from "./config.js?v=20261125144352";
+import { API_BASE_URL, ROUTES, getSession, saveSession, parseError, showMessagePopup, mountWbModal, } from "./config.js?v=20261125171901";
 const main = document.getElementById("profileMain");
 function esc(value) {
     return String(value ?? "")

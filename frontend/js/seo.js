@@ -1,5 +1,5 @@
-import { normalizeImageUrl } from "./config.js?v=20261125144352";
-import { TRIP_STYLES, normalizeTripStyle } from "./trip-styles.js?v=20261125144352";
+import { normalizeImageUrl } from "./config.js?v=20261125171901";
+import { TRIP_STYLES, normalizeTripStyle } from "./trip-styles.js?v=20261125171901";
 /** Always the production origin, so JSON-LD is right even when browsing localhost or a preview. */
 export const SITE_ORIGIN = "https://wonderbaboon.com";
 const ORG_ID = `${SITE_ORIGIN}/#organization`;

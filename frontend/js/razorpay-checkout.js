@@ -1,4 +1,4 @@
-import { API_BASE_URL, logger, mountWbModal, parseError, showSuccessModal } from "./config.js?v=20261125144352";
+import { API_BASE_URL, logger, mountWbModal, parseError, showSuccessModal } from "./config.js?v=20261125171901";
 function payLog(level, step, detail) {
     const msg = detail !== undefined ? `[wb-pay] ${step}` : `[wb-pay] ${step}`;
     if (level === "info")

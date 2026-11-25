@@ -1,4 +1,4 @@
-import { getCompletedAdventures, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES } from "./previous-adventures-data.js?v=20261125144352";
+import { getCompletedAdventures, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES } from "./previous-adventures-data.js?v=20261125171901";
 function escapeHtml(text) {
     return text
         .replace(/&/g, "&amp;")
