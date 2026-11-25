@@ -23,6 +23,11 @@
   RewriteRule ^previous-trips/?$ previous-trips.html [L,NC]
   # Travel Gallery (clean URL — no extra rule needed beyond this line)
   RewriteRule ^previous-adventures/?$ previous-adventures.html [L,NC]
+  # Legacy /campfire and /ollivanders → /the-quibbler (keep old shared links working)
+  RewriteRule ^campfire/?$ /the-quibbler [R=301,L,NC]
+  RewriteRule ^ollivanders/?$ /the-quibbler [R=301,L,NC]
+  RewriteRule ^the-quibbler/?$ the-quibbler.html [L,NC]
+  RewriteRule ^profile/?$ profile.html [L,NC]
   RewriteRule ^settings/?$ settings.html [L,NC]
   RewriteRule ^auth/?$ auth.html [L,NC]
   RewriteRule ^admin-dashboard/?$ admin-dashboard.html [L,NC]

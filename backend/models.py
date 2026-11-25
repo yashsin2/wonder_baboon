@@ -585,3 +585,93 @@ class TravelGalleryVisitRequest(_GalleryBase):
   @classmethod
   def validate_photos(cls, value: Optional[List[str]]) -> Optional[List[str]]:
     return _gallery_paths(value)
+
+
+BLOG_MOODS = ("Emotional", "Funny", "Adventure", "Food", "Soul-searching", "Budget tips")
+_HTML_TAG = re.compile(r"<[^>]*>|<|>")
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_blog_text(value: str, field: str, min_len: int, max_len: int, multiline: bool = False) -> str:
+  """Blog prose may contain ordinary words like 'select' or 'delete', so it skips sanitize_text."""
+  text = _CONTROL_CHARS.sub("", value or "").replace("\r\n", "\n").strip()
+  if not multiline:
+    text = re.sub(r"\s+", " ", text)
+  if _HTML_TAG.search(text):
+    raise ValueError(f"{field} cannot contain HTML or angle brackets")
+  if len(text) < min_len:
+    raise ValueError(f"{field} must be at least {min_len} characters")
+  if len(text) > max_len:
+    raise ValueError(f"{field} must be at most {max_len} characters")
+  return text
+
+
+class BlogImage(BaseModel):
+  full: str = Field(min_length=1, max_length=500)
+  thumb: str = Field(min_length=1, max_length=500)
+  w: int = Field(ge=1, le=10000)
+  h: int = Field(ge=1, le=10000)
+  caption: str = Field(default="", max_length=140)
+
+  @field_validator("caption")
+  @classmethod
+  def validate_caption(cls, value: str) -> str:
+    return clean_blog_text(value, "caption", 0, 140) if value else ""
+
+
+class BlogDiscardUploadRequest(BaseModel):
+  full: str = Field(min_length=1, max_length=500)
+  thumb: str = Field(min_length=1, max_length=500)
+
+
+class BlogPostRequest(BaseModel):
+  title: str
+  body: str
+  mood: str
+  place: str = ""
+  images: List[BlogImage] = Field(default_factory=list, max_length=6)
+
+  @field_validator("title")
+  @classmethod
+  def validate_title(cls, value: str) -> str:
+    return clean_blog_text(value, "title", 4, 120)
+
+  @field_validator("body")
+  @classmethod
+  def validate_body(cls, value: str) -> str:
+    return clean_blog_text(value, "story", 50, 10000, multiline=True)
+
+  @field_validator("mood")
+  @classmethod
+  def validate_mood(cls, value: str) -> str:
+    if value not in BLOG_MOODS:
+      raise ValueError("pick a mood from the list")
+    return value
+
+  @field_validator("place")
+  @classmethod
+  def validate_place(cls, value: str) -> str:
+    return clean_blog_text(value, "place", 0, 80) if value else ""
+
+
+class BlogCommentRequest(BaseModel):
+  body: str
+  parentId: Optional[str] = None
+
+  @field_validator("body")
+  @classmethod
+  def validate_body(cls, value: str) -> str:
+    return clean_blog_text(value, "comment", 1, 1000, multiline=True)
+
+
+class BlogReportRequest(BaseModel):
+  reason: str = ""
+
+  @field_validator("reason")
+  @classmethod
+  def validate_reason(cls, value: str) -> str:
+    return clean_blog_text(value, "reason", 0, 200) if value else ""
+
+
+class BlogModerateRequest(BaseModel):
+  status: Literal["published", "hidden", "deleted"]

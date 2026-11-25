@@ -31,6 +31,13 @@
       "kind": "collection",
       "crumb": "Travel Gallery"
     },
+    "the-quibbler": {
+      "path": "/the-quibbler",
+      "title": "The Quibbler: Stories from People Who Wander | Wonder Baboon",
+      "description": "The Quibbler — stories from people who wander. Real travel stories from the road: emotional, funny and unforgettable. Read, like and comment, or share your own tale with photos.",
+      "kind": "collection",
+      "crumb": "The Quibbler"
+    },
     "backpackers": {
       "path": "/backpackers",
       "title": "Backpacking Trips in India | Wonder Baboon",

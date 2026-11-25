@@ -1,4 +1,9 @@
 import { API_BASE_URL, parseError, ROUTES, saveSession } from "./config.js";
+/** ?next=/the-quibbler returns the user to where they came from; only same-site relative paths are honoured. */
+function postLoginTarget(fallback) {
+    const next = new URLSearchParams(window.location.search).get("next") || "";
+    return /^\/(?![/\\])[A-Za-z0-9/_\-?=&%.]*$/.test(next) ? next : fallback;
+}
 const statusEl = document.getElementById("authStatus");
 function showStatus(message, ok = false) {
     statusEl.textContent = message;
@@ -44,7 +49,7 @@ document.getElementById("signupForm").addEventListener("submit", async (event) =
         saveSession(data.token, data.user);
         showStatus("Account created! Redirecting to your dashboard...", true);
         setTimeout(() => {
-            window.location.href = ROUTES.upcoming;
+            window.location.href = postLoginTarget(ROUTES.upcoming);
         }, 900);
     }
     catch (error) {
@@ -73,7 +78,7 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
         }
         showStatus("Logged in! Opening your dashboard...", true);
         setTimeout(() => {
-            window.location.href = ROUTES.upcoming;
+            window.location.href = postLoginTarget(ROUTES.upcoming);
         }, 700);
     }
     catch (error) {
@@ -85,5 +90,5 @@ const token = localStorage.getItem("wb_token");
 const userRaw = localStorage.getItem("wb_user");
 if (token && userRaw) {
     const user = JSON.parse(userRaw);
-    window.location.href = user.role === "admin" ? ROUTES.admin : ROUTES.upcoming;
+    window.location.href = user.role === "admin" ? ROUTES.admin : postLoginTarget(ROUTES.upcoming);
 }

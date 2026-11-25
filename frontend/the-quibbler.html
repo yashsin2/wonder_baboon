@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+  <script>
+  (function () {
+    var p = location.pathname;
+    if (p === "/index.html" || /\/index\.html$/i.test(p)) {
+      history.replaceState(null, "", "/" + location.search + location.hash);
+    } else if (/\.html$/i.test(p)) {
+      history.replaceState(null, "", p.replace(/\.html$/i, "") + location.search + location.hash);
+    }
+    var h = location.hostname;
+    if (h === "wonderbaboon.com" || h === "www.wonderbaboon.com") {
+      window.__WB_API_BASE__ = window.__WB_API_BASE__ || "https://api.wonderbaboon.com/api";
+    }
+  })();
+  </script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="icon" type="image/png" sizes="48x48" href="https://wonderbaboon.com/wb-favicon-48.png">
+  <link rel="icon" href="https://wonderbaboon.com/wb-favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="https://wonderbaboon.com/wb-apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
+  <link rel="stylesheet" href="./styles.css?v=381884c" />
+  <link rel="stylesheet" href="./the-quibbler.css?v=381884c" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Gloria+Hallelujah&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- SEO:START -->
+  <title>The Quibbler: Stories from People Who Wander | Wonder Baboon</title>
+  <meta name="description" content="The Quibbler — stories from people who wander. Real travel stories from the road: emotional, funny and unforgettable. Read, like and comment, or share your own tale with photos.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+  <link rel="canonical" href="https://wonderbaboon.com/the-quibbler">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="application-name" content="Wonder Baboon">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Wonder Baboon">
+  <meta property="og:locale" content="en_IN">
+  <meta property="og:url" content="https://wonderbaboon.com/the-quibbler">
+  <meta property="og:title" content="The Quibbler: Stories from People Who Wander | Wonder Baboon">
+  <meta property="og:description" content="The Quibbler — stories from people who wander. Real travel stories from the road: emotional, funny and unforgettable. Read, like and comment, or share your own tale with photos.">
+  <meta property="og:image" content="https://wonderbaboon.com/assets/lake.jpg">
+  <meta property="og:image:alt" content="A calm mountain lake — Wonder Baboon group trips across India">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Quibbler: Stories from People Who Wander | Wonder Baboon">
+  <meta name="twitter:description" content="The Quibbler — stories from people who wander. Real travel stories from the road: emotional, funny and unforgettable. Read, like and comment, or share your own tale with photos.">
+  <meta name="twitter:image" content="https://wonderbaboon.com/assets/lake.jpg">
+  <!-- SEO:END -->
+</head>
+<body data-page="the-quibbler" class="cf">
+  <header class="cf-top">
+    <button type="button" class="cf-icon-btn cf-menu-btn" id="openPanelBtn" aria-label="Open menu">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <a class="cf-brand" href="/" aria-label="Wonder Baboon — home">
+      <img src="./assets/logo.png" alt="" class="cf-brand-logo" width="28" height="28" />
+      <span class="cf-brand-title">Wonder Baboon</span>
+      <span class="cf-brand-sub">· The Quibbler</span>
+    </a>
+    <nav class="cf-nav" id="cfNav" aria-label="The Quibbler sections">
+      <button type="button" class="cf-icon-btn" data-view="home" aria-label="Home" aria-pressed="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1z"/></svg>
+      </button>
+      <button type="button" class="cf-icon-btn is-on" data-view="explore" aria-label="Most loved" aria-pressed="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 100-18 9 9 0 000 18zM15.5 8.5l-2 5-5 2 2-5z"/></svg>
+      </button>
+      <button type="button" class="cf-icon-btn" data-view="saved" aria-label="Saved stories" aria-pressed="false">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>
+      </button>
+      <a class="cf-icon-btn" href="/profile" aria-label="Your profile">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2M12 11a4 4 0 100-8 4 4 0 000 8z"/></svg>
+      </a>
+    </nav>
+  </header>
+
+  <div class="cf-moods" id="cfMoods" role="tablist" aria-label="Filter by mood"></div>
+
+  <main class="cf-feed" id="cfFeed">
+    <button type="button" class="cf-compose" id="cfCompose">
+      <span class="cf-avatar" id="cfComposeAvatar" aria-hidden="true">+</span>
+      <span class="cf-compose-text">Pull up a chair and tell us your story&hellip;</span>
+      <span class="cf-compose-cta">Write</span>
+    </button>
+
+    <div id="cfViewTitle" class="cf-view-title" hidden></div>
+    <div id="cfPosts"></div>
+    <div id="cfStatus" class="cf-status" aria-live="polite"></div>
+    <div id="cfSentinel" class="cf-sentinel" aria-hidden="true"></div>
+  </main>
+
+  <aside class="user-panel" id="userPanel" aria-hidden="true">
+    <div class="user-panel-overlay" data-panel-close></div>
+    <div class="user-panel-drawer" role="dialog" aria-label="Wonder Baboon menu">
+      <header class="user-panel-head">
+        <button class="user-panel-close" data-panel-close aria-label="Close panel">&times;</button>
+        <div class="up-head-row">
+          <div class="up-avatar" id="panelAvatar" aria-hidden="true"><img src="./assets/logo.png" alt="Wonder Baboon" /></div>
+          <div class="up-head-text">
+            <h3 id="panelTitle">Wonder Baboon</h3>
+            <p id="panelGreeting" class="up-greeting">Welcome, traveler</p>
+          </div>
+        </div>
+      </header>
+      <nav class="up-nav" data-panel-nav>
+        <a class="up-nav-item" href="/" data-page="home"><span class="up-icon">🏠</span> Home</a>
+        <a class="up-nav-item" href="/the-quibbler" data-page="the-quibbler"><span class="up-icon">📰</span> The Quibbler</a>
+        <a class="up-nav-item" href="/upcoming-trips" data-page="upcoming"><span class="up-icon">📅</span> Your trips</a>
+        <a class="up-nav-item" href="/previous-adventures" data-page="adventures"><span class="up-icon">🗺️</span> Travel Gallery</a>
+        <a class="up-nav-item" href="/previous-trips" data-page="previous"><span class="up-icon">📋</span> Your past bookings</a>
+        <a class="up-nav-item" href="/profile" data-page="profile"><span class="up-icon">👤</span> Your profile</a>
+        <a class="up-nav-item" href="/settings" data-page="settings"><span class="up-icon">⚙️</span> Settings</a>
+        <div class="up-nav-section">
+          <p class="up-nav-section-label">Explore by vibe</p>
+          <a class="up-nav-item up-nav-item--sub" href="/backpackers" data-page="backpackers"><span>The Backpackers</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/motorcycle-diaries" data-page="motorcycle-diaries"><span>The Motorcycle Diaries</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/dolce-far-niente" data-page="dolce-far-niente"><span>Dolce far niente</span></a>
+          <a class="up-nav-item up-nav-item--sub" href="/hikers" data-page="hikers"><span>The Hikers</span></a>
+        </div>
+      </nav>
+      <footer class="user-panel-foot" id="userPanelFoot">
+        <a href="/auth" class="up-footer-btn up-login-btn">Login / Sign up</a>
+      </footer>
+    </div>
+  </aside>
+
+  <script type="module" src="./js/the-quibbler.js?v=381884c"></script>
+  <script type="module" src="./js/user-panel.js?v=381884c"></script>
+  <script src="/version-check.js?v=381884c" defer></script>
+</body>
+</html>

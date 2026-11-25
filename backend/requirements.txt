@@ -9,3 +9,4 @@ email-validator
 certifi
 pypdf
 razorpay
+Pillow>=10.0

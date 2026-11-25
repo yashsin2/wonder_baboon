@@ -26,6 +26,7 @@ from auth_utils import (
 )
 from config import (
   CORS_ORIGINS,
+  FRONTEND_PUBLIC_ORIGIN,
   HOST,
   IS_PRODUCTION,
   JWT_SECRET,
@@ -39,6 +40,11 @@ from config import (
 from logging_setup import configure_logging
 from models import (
   AddMembersRequest,
+  BlogCommentRequest,
+  BlogDiscardUploadRequest,
+  BlogModerateRequest,
+  BlogPostRequest,
+  BlogReportRequest,
   AdminConfirmBookingRequest,
   AdminConfirmPaymentFields,
   AdminMarkFullPaymentRequest,
@@ -60,6 +66,7 @@ from models import (
   UserSignupRequest,
 )
 from middleware.auth_rate_limit import auth_rate_limit_middleware, client_ip
+from services import blog_service, image_service
 from services.email_service import email_service
 from services.itinerary_pdf import pdf_bytes_to_itinerary_html
 from services.mongo_service import mongo_service
@@ -531,6 +538,8 @@ async def request_logger(request: Request, call_next):
     response.headers.setdefault(key, value)
   if request.url.path.startswith("/api/") and request.url.path not in ("/api/trips", "/api/travel-gallery") and not request.url.path.startswith("/api/media/"):
     response.headers["Cache-Control"] = "no-store"  # never cache account / admin / payment responses
+  elif request.url.path.startswith("/api/media/blog/") and response.status_code == 200:
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"  # uuid file names never change
   logger.info(
     "%s %s -> %s in %.1fms (client=%s)",
     request.method,
@@ -573,12 +582,25 @@ def startup_event() -> None:
     mongo_service.connect()
     if mongo_service.is_connected():
       mongo_service.seed_defaults()
+      blog_service.ensure_indexes()
       logger.info("Mongo connected & seeded")
     else:
       logger.warning("Mongo not connected at startup; API will return 503 for DB endpoints")
   except Exception:
     logger.exception("Mongo startup failed")
   start_trip_completion_worker()
+  threading.Thread(target=_blog_sweep_loop, name="blog-image-sweep", daemon=True).start()
+
+
+def _blog_sweep_loop() -> None:
+  while True:
+    time.sleep(6 * 3600)
+    try:
+      removed = blog_service.sweep_orphan_images()
+      if removed:
+        logger.info("blog image sweep removed %s orphan file(s)", removed)
+    except Exception:
+      logger.exception("blog image sweep failed")
 
 
 @app.post("/api/admin/email/test-trip-completed")
@@ -1577,6 +1599,211 @@ async def admin_upload_gallery_visit_photos(
     "paths": saved,
     "destination": mongo_service.find_travel_gallery_by_id(state_id),
   }
+
+
+# ----- The Quibbler (travel stories) -----
+
+
+def _viewer_email(authorization: Optional[str]) -> str:
+  payload = decode_token(authorization)
+  if payload and payload.get("role") == "user":
+    return str(payload.get("email") or "")
+  return ""
+
+
+def _is_admin_token(authorization: Optional[str]) -> bool:
+  payload = decode_token(authorization)
+  return bool(payload and payload.get("role") == "admin")
+
+
+def _user_email(authorization: Optional[str]) -> str:
+  email = str(_require_user(authorization).get("email") or "")
+  if not email or not mongo_service.find_user_by_email(email):
+    raise HTTPException(status_code=401, detail="user login required")
+  return email
+
+
+def _media_origin(request: Request) -> str:
+  origin = MEDIA_PUBLIC_ORIGIN or str(request.base_url).rstrip("/")
+  if IS_PRODUCTION and origin.startswith("http://"):
+    origin = "https://" + origin[len("http://"):]
+  return origin
+
+
+@app.get("/api/blog")
+def blog_list(
+  mood: str = "All",
+  sort: str = "latest",
+  cursor: str = "",
+  limit: int = 12,
+  saved: bool = False,
+  mine: bool = False,
+  authorization: Optional[str] = Header(default=None),
+):
+  mongo_service.ensure_ready()
+  viewer = _viewer_email(authorization)
+  if saved and not viewer:
+    raise HTTPException(status_code=401, detail="user login required")
+  if mine and not viewer:
+    raise HTTPException(status_code=401, detail="user login required")
+  return blog_service.list_posts(mood, sort, cursor, limit, viewer, saved_only=saved, mine_only=mine)
+
+
+@app.post("/api/blog/photos")
+async def blog_upload_photos(
+  request: Request,
+  files: List[UploadFile] = File(...),
+  authorization: Optional[str] = Header(default=None),
+):
+  mongo_service.ensure_ready()
+  email = _user_email(authorization)
+  if len(files) > 6:
+    raise HTTPException(status_code=400, detail="Upload up to 6 photos at a time")
+  origin = _media_origin(request)
+  images = []
+  for file in files:
+    blog_service.check_rate("photo", email)
+    data = await file.read()
+    try:
+      image = image_service.process_and_store(data, origin)
+    except image_service.ImageRejected as error:
+      raise HTTPException(status_code=400, detail=f"{file.filename or 'photo'}: {error}")
+    blog_service.record_upload(email, image)
+    images.append(image)
+  return {"images": images}
+
+
+@app.delete("/api/blog/photos")
+def blog_discard_photo(payload: BlogDiscardUploadRequest, authorization: Optional[str] = Header(default=None)):
+  """The author removed a just-uploaded photo before publishing — delete it from disk right away
+  instead of waiting on the 24h orphan sweep."""
+  mongo_service.ensure_ready()
+  email = _user_email(authorization)
+  blog_service.discard_upload(email, payload.full, payload.thumb)
+  return {"message": "discarded"}
+
+
+def _notify_story_subscribers(followers: List[str], author_name: str, post: Dict[str, Any]) -> None:
+  """Runs off the request thread — a slow/failed email must never block publishing."""
+  story_url = f"{FRONTEND_PUBLIC_ORIGIN}/the-quibbler?story={post['id']}"
+  for subscriber in followers:
+    try:
+      email_service.notify_new_story_subscriber(
+        subscriber,
+        author_name=author_name,
+        story_title=post.get("title", ""),
+        story_excerpt=post.get("excerpt", ""),
+        mood=post.get("mood", ""),
+        story_url=story_url,
+      )
+    except Exception:
+      logger.exception("Failed to notify subscriber %s of new story", subscriber)
+
+
+@app.post("/api/blog")
+def blog_create(payload: BlogPostRequest, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  email = _user_email(authorization)
+  post = blog_service.create_post(email, payload)
+  followers = blog_service.list_followers(email)
+  if followers:
+    _run_email_background(_notify_story_subscribers, followers, post.get("authorName", ""), post)
+  return {"post": post}
+
+
+@app.post("/api/blog/{post_id}/follow")
+def blog_follow_author(post_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return blog_service.toggle_follow_author(post_id, _user_email(authorization))
+
+
+@app.get("/api/blog/{post_id}")
+def blog_get(post_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return {"post": blog_service.get_post(post_id, _viewer_email(authorization), _is_admin_token(authorization))}
+
+
+@app.delete("/api/blog/comments/{comment_id}")
+def blog_delete_comment(comment_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  admin = _is_admin_token(authorization)
+  email = "" if admin else _user_email(authorization)
+  return blog_service.delete_comment(comment_id, email, admin)
+
+
+@app.post("/api/blog/comments/{comment_id}/report")
+def blog_report_comment(comment_id: str, payload: BlogReportRequest, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return blog_service.report("comment", comment_id, _user_email(authorization), payload.reason)
+
+
+@app.delete("/api/blog/{post_id}")
+def blog_delete(post_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  admin = _is_admin_token(authorization)
+  email = "" if admin else _user_email(authorization)
+  blog_service.delete_post(post_id, email, admin)
+  return {"message": "story deleted"}
+
+
+@app.patch("/api/blog/{post_id}")
+def blog_update(post_id: str, payload: BlogPostRequest, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  email = _user_email(authorization)
+  return {"post": blog_service.update_post(post_id, email, payload)}
+
+
+@app.post("/api/blog/{post_id}/like")
+def blog_like(post_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return blog_service.toggle_like(post_id, _user_email(authorization))
+
+
+@app.post("/api/blog/{post_id}/save")
+def blog_save(post_id: str, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return blog_service.toggle_save(post_id, _user_email(authorization))
+
+
+@app.get("/api/blog/{post_id}/comments")
+def blog_comments(
+  post_id: str,
+  parentId: str = "",
+  cursor: str = "",
+  limit: int = 10,
+  authorization: Optional[str] = Header(default=None),
+):
+  mongo_service.ensure_ready()
+  return blog_service.list_comments(
+    post_id, parentId, cursor, limit, _viewer_email(authorization), _is_admin_token(authorization)
+  )
+
+
+@app.post("/api/blog/{post_id}/comments")
+def blog_add_comment(post_id: str, payload: BlogCommentRequest, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return {"comment": blog_service.add_comment(post_id, _user_email(authorization), payload)}
+
+
+@app.post("/api/blog/{post_id}/report")
+def blog_report(post_id: str, payload: BlogReportRequest, authorization: Optional[str] = Header(default=None)):
+  mongo_service.ensure_ready()
+  return blog_service.report("post", post_id, _user_email(authorization), payload.reason)
+
+
+@app.get("/api/admin/blog")
+def admin_blog_list(status: str = "reported", _: dict = Depends(require_admin)):
+  mongo_service.ensure_ready()
+  return blog_service.admin_list(status)
+
+
+@app.patch("/api/admin/blog/{post_id}")
+def admin_blog_moderate(post_id: str, payload: BlogModerateRequest, _: dict = Depends(require_admin)):
+  mongo_service.ensure_ready()
+  if payload.status == "deleted":
+    blog_service.delete_post(post_id, "", True)
+    return {"id": post_id, "status": "deleted"}
+  return blog_service.admin_set_status(post_id, payload.status)
 
 
 if __name__ == "__main__":

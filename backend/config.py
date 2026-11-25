@@ -46,6 +46,10 @@ TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "1" if IS_PRODUCTION el
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR") or (ROOT_DIR / "backend" / "uploads")).resolve()
 # Public origin of the API, e.g. https://api.wonderbaboon.com  (used to build photo URLs stored in the DB)
 MEDIA_PUBLIC_ORIGIN = (os.getenv("MEDIA_PUBLIC_ORIGIN") or "").strip().rstrip("/")
+# Public origin of the website, used to build links inside emails (e.g. a new-story notice).
+FRONTEND_PUBLIC_ORIGIN = (
+  os.getenv("FRONTEND_PUBLIC_ORIGIN") or ("https://wonderbaboon.com" if IS_PRODUCTION else "http://localhost:3000")
+).strip().rstrip("/")
 
 PORT = int(os.getenv("PORT", "5051"))
 HOST = os.getenv("HOST", "0.0.0.0")

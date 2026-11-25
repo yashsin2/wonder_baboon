@@ -960,5 +960,114 @@ class EmailService:
     if not ok:
       logger.error("Traveler member-update email failed: %s", err)
 
+  def notify_new_story_subscriber(
+    self,
+    to: str,
+    *,
+    author_name: str,
+    story_title: str,
+    story_excerpt: str,
+    mood: str,
+    story_url: str,
+  ) -> None:
+    """Tell a follower that someone they follow on The Quibbler just posted. Failures are logged only."""
+    from services.mongo_service import mongo_service as _mongo
+
+    user = _mongo.find_user_by_email(to) or {}
+    subscriber_name = str(user.get("name") or "").strip()
+    subject = f"📰 {author_name} just posted a new tale in The Quibbler"
+    kw = dict(
+      subscriber_name=subscriber_name,
+      author_name=author_name,
+      story_title=story_title,
+      story_excerpt=story_excerpt,
+      mood=mood,
+      story_url=story_url,
+    )
+    html_body = new_story_subscriber_html(**kw)
+    plain = new_story_subscriber_plain_text(**kw)
+    ok, err = self.send_plain_and_html(to, subject, plain, html_body)
+    if not ok:
+      logger.error("New-story subscriber email to %s failed: %s", to, err)
+
+
+def new_story_subscriber_html(
+  *,
+  subscriber_name: str,
+  author_name: str,
+  story_title: str,
+  story_excerpt: str,
+  mood: str,
+  story_url: str,
+) -> str:
+  """Cozy-cabin palette, matching The Quibbler page itself."""
+  bg = "#f5e8da"
+  card = "#fff9f2"
+  text = "#3e2a20"
+  soft = "#7a5f4e"
+  accent = "#a8501f"
+  greeting = subscriber_name.strip() if subscriber_name else "there"
+  return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width" />
+<title>A new tale from {_safe(author_name)}</title></head>
+<body style="margin:0;padding:0;background:{bg};font-family:Georgia,'Times New Roman',serif;color:{text};">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:{bg};padding:36px 12px;">
+  <tr><td align="center">
+    <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;background:{card};border-radius:18px;overflow:hidden;box-shadow:0 18px 45px rgba(62,42,32,0.18);border:1px solid #e8d4be;">
+      <tr><td style="background:{text};padding:30px 28px;color:#fff9f2;">
+        <p style="margin:0 0 6px;font-size:11px;letter-spacing:0.3em;text-transform:uppercase;opacity:0.85;">The Quibbler</p>
+        <h1 style="margin:0;font-size:24px;line-height:1.25;font-weight:700;">📰 A new tale has arrived</h1>
+        <p style="margin:12px 0 0;font-size:15px;opacity:0.92;font-style:italic;">stories from people who wander</p>
+      </td></tr>
+      <tr><td style="padding:30px 28px;">
+        <p style="margin:0 0 16px;font-size:16px;line-height:1.5;">Hi {_safe(greeting)},</p>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.65;color:#52382c;">
+          <strong>{_safe(author_name)}</strong>, one of the storytellers you follow, just pulled up a chair
+          and shared a new story in The Quibbler.
+        </p>
+        <div style="margin:0 0 22px;padding:20px 22px;background:{bg};border-radius:14px;border:1px dashed {accent};">
+          {f'<p style="margin:0 0 8px;display:inline-block;padding:3px 12px;border-radius:999px;background:rgba(168,80,31,0.12);color:{accent};font-size:11px;font-weight:700;letter-spacing:0.3px;">{_safe(mood)}</p>' if mood else ""}
+          <h2 style="margin:0 0 8px;font-size:20px;line-height:1.3;color:{text};">{_safe(story_title)}</h2>
+          <p style="margin:0;font-size:14px;line-height:1.6;color:{soft};">{_safe(story_excerpt)}</p>
+        </div>
+        <table role="presentation" cellspacing="0" cellpadding="0">
+          <tr><td style="border-radius:999px;background:{accent};">
+            <a href="{story_url}" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:700;color:#fff9f2;text-decoration:none;border-radius:999px;">Read the story →</a>
+          </td></tr>
+        </table>
+        <p style="margin:26px 0 0;font-size:13px;line-height:1.55;color:{soft};">
+          You're getting this because you followed {_safe(author_name)} on The Quibbler. You can unfollow any time from their story.
+        </p>
+      </td></tr>
+      <tr><td style="padding:14px 20px;background:#faf1e5;font-size:11px;color:{soft};text-align:center;">
+        Wonder Baboon · The Quibbler — stories from people who wander
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>"""
+
+
+def new_story_subscriber_plain_text(
+  *,
+  subscriber_name: str,
+  author_name: str,
+  story_title: str,
+  story_excerpt: str,
+  mood: str,
+  story_url: str,
+) -> str:
+  g = subscriber_name.strip() if subscriber_name else "there"
+  mood_line = f"Mood: {mood}\n" if mood else ""
+  return (
+    f"A new tale has arrived — The Quibbler\n\n"
+    f"Hi {g},\n\n"
+    f"{author_name}, one of the storytellers you follow, just shared a new story in The Quibbler.\n\n"
+    f"{mood_line}"
+    f"{story_title}\n{story_excerpt}\n\n"
+    f"Read it here: {story_url}\n\n"
+    f"You're getting this because you followed {author_name}. You can unfollow any time from their story.\n\n"
+    "Wonder Baboon · The Quibbler\n"
+  )
+
 
 email_service = EmailService()

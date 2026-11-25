@@ -42,7 +42,11 @@ export const ROUTES = {
     auth: "/auth",
     upcoming: "/upcoming-trips",
     adventures: "/previous-adventures",
+    campfire: "/the-quibbler",
+    ollivanders: "/the-quibbler",
+    theQuibbler: "/the-quibbler",
     previous: "/previous-trips",
+    profile: "/profile",
     settings: "/settings",
     admin: "/admin-dashboard",
 };

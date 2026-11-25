@@ -32,7 +32,9 @@ body {
 
 .site-header {
   background: #faf6ef;
-  padding: 12px 20px;
+  /* Tighter side padding than before — pulls the menu button and search box
+     a bit closer to the edges, freeing width for the logo and nav between them. */
+  padding: 12px 12px;
   border-bottom: 1px solid #e7dfd0;
   position: sticky;
   top: 0;
@@ -82,7 +84,9 @@ body {
   justify-content: space-between;
 }
 
-/* As viewport shrinks, drop optional pieces so the row stays single-line */
+/* As viewport shrinks, drop optional pieces so the row stays single-line.
+   Now that the logo text is sized correctly (see .logo-text), the phone
+   number can stay visible down to a much narrower width. */
 @media (max-width: 1180px) {
   .site-header .phone { display: none; }
 }
@@ -278,13 +282,25 @@ body {
   display: flex;
   flex-direction: column;
   line-height: 1.1;
+  min-width: 0;
+  /* Generous — comfortably fits "Wonder Baboon" even if the cursive webfont
+     fails to load and a wide fallback is used. This is a last-resort safety
+     ceiling against a runaway font, not a normal truncation point: the nav
+     and other header items give way first (see the breakpoints below), so
+     the brand name itself should never actually need to ellipsize. */
+  max-width: 340px;
+  overflow: hidden;
 }
 
 .logo-text {
-  font-size: 22px;
+  display: block;
+  max-width: 100%;
+  font-size: 19px;
   font-weight: bold;
   font-family: 'Permanent Marker', cursive;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .logo-greeting {
@@ -294,6 +310,10 @@ body {
   font-weight: 600;
   margin-top: 2px;
   letter-spacing: 0.2px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-links {
@@ -304,6 +324,26 @@ body {
   flex: 1 1 auto;
   justify-content: center;
   min-width: 0;
+}
+
+.nav-links > a,
+.nav-links > .nav-dropdown {
+  /* Never let an individual link shrink below its text and silently
+     bleed over a neighbour — the row should compress the GAPS first. */
+  flex-shrink: 0;
+}
+
+/* Mid-width desktops: tighten gaps before anything is forced to wrap/collide.
+   Matches the breakpoint that drops the phone number, so this is the whole
+   zone where the row is under any real width pressure. */
+@media (max-width: 1180px) and (min-width: 901px) {
+  .nav-links {
+    gap: 6px;
+  }
+  .nav-links a {
+    font-size: 13px;
+    padding: 6px 6px;
+  }
 }
 
 .nav-links a {
@@ -3059,7 +3099,8 @@ body[data-trip-style] .style-trips-scroll-hint {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  row-gap: 10px;
   flex-wrap: wrap;
   border-top: 1px dashed #e7dfd0;
 }
@@ -3069,8 +3110,25 @@ body[data-trip-style] .style-trips-scroll-hint {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 8px;
   margin-left: auto;
+  min-width: 0;
+}
+
+/* Mid-range screens where the price + 3 action buttons would otherwise collide */
+@media (max-width: 720px) {
+  .trip-card-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .trip-card-actions {
+    margin-left: 0;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+  .trip-price {
+    text-align: left;
+  }
 }
 
 .btn-itinerary {
@@ -5428,10 +5486,13 @@ footer::before {
 
 .logo-text {
   font-family: 'Permanent Marker', cursive;
-  font-size: 28px;
+  /* This rule (later in the cascade) was overriding the 22px/no-spacing
+     set above with 28px + 2px letter-spacing — that extra ~90px is what kept
+     crowding the nav next to it. Sized down a little further per request. */
+  font-size: 19px;
   font-weight: bold;
   color: #2c2c2c;
-  letter-spacing: 2px;
+  letter-spacing: 0.3px;
 }
 
 body[data-trip-style] .logo .logo-text {
