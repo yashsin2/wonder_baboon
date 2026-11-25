@@ -1,8 +1,8 @@
-import { galleryToJsonLd, setJsonLd, setPageSeo } from "./seo.js";
-import { INDIA_MAP_VIEWBOX, mountIndiaMap, pinToPercent, setHighlightedState } from "./india-map.js";
-import { getAdventureById, getGalleryHeroImage, getGalleryMapPin, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES, } from "./previous-adventures-data.js";
-import { updateHeaderAuth } from "./config.js";
-import { districtFromTarget, getStateMapMeta, loadStateMapManifest, loadStateMapSvg, markDistricts, mountStateMap, projectLatLng, } from "./state-maps.js";
+import { galleryToJsonLd, setJsonLd, setPageSeo } from "./seo.js?v=20261125144352";
+import { INDIA_MAP_VIEWBOX, mountIndiaMap, pinToPercent, setHighlightedState } from "./india-map.js?v=20261125144352";
+import { getAdventureById, getGalleryHeroImage, getGalleryMapPin, loadTravelGalleryFromApi, PREVIOUS_ADVENTURES, } from "./previous-adventures-data.js?v=20261125144352";
+import { updateHeaderAuth } from "./config.js?v=20261125144352";
+import { districtFromTarget, getStateMapMeta, loadStateMapManifest, loadStateMapSvg, markDistricts, mountStateMap, projectLatLng, } from "./state-maps.js?v=20261125144352";
 function escapeHtml(text) {
     return text
         .replace(/&/g, "&amp;")

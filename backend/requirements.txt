@@ -10,3 +10,4 @@ certifi
 pypdf
 razorpay
 Pillow>=10.0
+pillow-heif>=0.18

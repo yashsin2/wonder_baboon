@@ -1,7 +1,7 @@
-import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js";
+import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js?v=20261125144352";
 const MOODS = ["Emotional", "Funny", "Adventure", "Food", "Soul-searching", "Budget tips"];
 const MAX_PHOTOS = 6;
-const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
 const BODY_MIN = 50;
 const BODY_MAX = 10000;
 const $ = (id) => document.getElementById(id);
@@ -24,6 +24,7 @@ const ICON = {
     save: `<svg width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12a1 1 0 011 1v17l-7-4-7 4V4a1 1 0 011-1z"/></svg>`,
     pin: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>`,
     bell: `<svg width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`,
+    chevron: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>`,
     photo: `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>`,
     more: `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>`,
 };
@@ -776,6 +777,16 @@ async function mountComments(s, p, focus) {
     if (focus)
         root.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+const PHOTO_MIME_RE = /^image\/(jpeg|png|webp|heic|heif)$/;
+const PHOTO_EXT_RE = /\.(jpe?g|png|webp|heic|heif)$/i;
+/** Some mobile browsers report an empty `file.type` for a real photo (depends on the picker
+ * app) — fall back to the extension in that case rather than rejecting a genuine photo. A
+ * non-empty type is always trusted as-is, which keeps non-photo files (PDFs, videos, docs) out. */
+function looksLikePhoto(file) {
+    if (file.type)
+        return PHOTO_MIME_RE.test(file.type);
+    return PHOTO_EXT_RE.test(file.name);
+}
 /** Best-effort: tell the server to delete a just-uploaded (or now-unused) photo right away,
  * instead of letting it sit on disk until the 24h orphan sweep. Never blocks the UI. */
 function discardUploadedImage(image) {
@@ -787,6 +798,9 @@ function openComposer(editing) {
     if (!requireUser("write a story"))
         return;
     const drafts = [];
+    // Keys of drafts the traveller removed while an upload (or its pending retry) was still in
+    // flight — a retry checks this so it doesn't resurrect a photo they already took back out.
+    const cancelled = new Set();
     let selectedMood = editing?.mood ?? "";
     let keyCounter = 0;
     let publishing = false;
@@ -823,9 +837,14 @@ function openComposer(editing) {
       <div class="cf-field"><label for="cfBody">Your story</label>
         <textarea id="cfBody" maxlength="${BODY_MAX}" placeholder="Tell it the way you would tell it by a fire."></textarea>
         <div class="cf-hint"><span id="cfBodyHint">At least ${BODY_MIN} characters</span><span id="cfBodyCount">0 words</span></div></div>
-      <div class="cf-field"><span class="cf-label">Photos <span class="cf-meta">(up to ${MAX_PHOTOS}, 8 MB each)</span></span>
-        <div class="cf-thumbs" id="cfThumbs"></div>
-        <input type="file" id="cfFiles" accept="image/jpeg,image/png,image/webp" multiple hidden /></div>
+      <div class="cf-field"><span class="cf-label">Photos <span class="cf-meta">(up to ${MAX_PHOTOS}, 20 MB each)</span></span>
+        <div class="cf-thumbs-wrap" id="cfThumbsWrap">
+          <div class="cf-thumbs" id="cfThumbs"></div>
+          <button type="button" class="cf-thumb-nav cf-thumb-nav--prev" id="cfThumbPrev" aria-label="Previous photo" hidden>${ICON.chevron}</button>
+          <button type="button" class="cf-thumb-nav cf-thumb-nav--next" id="cfThumbNext" aria-label="Next photo" hidden>${ICON.chevron}</button>
+          <div class="cf-thumb-dots" id="cfThumbDots"></div>
+        </div>
+        <input type="file" id="cfFiles" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden /></div>
       <div class="cf-form-error" id="cfError" role="alert"></div>
     </form>
     <div class="cf-form-foot"><span>${esc(foot)}</span>
@@ -860,6 +879,9 @@ function openComposer(editing) {
     const placeEl = s.sheet.querySelector("#cfPlace");
     const bodyEl = s.sheet.querySelector("#cfBody");
     const thumbsEl = s.sheet.querySelector("#cfThumbs");
+    const thumbDotsEl = s.sheet.querySelector("#cfThumbDots");
+    const thumbPrevEl = s.sheet.querySelector("#cfThumbPrev");
+    const thumbNextEl = s.sheet.querySelector("#cfThumbNext");
     const filesEl = s.sheet.querySelector("#cfFiles");
     const publishEl = s.sheet.querySelector("#cfPublish");
     const errorEl = s.sheet.querySelector("#cfError");
@@ -881,6 +903,9 @@ function openComposer(editing) {
         bodyHint.classList.toggle("is-bad", bodyLen > 0 && bodyLen < BODY_MIN);
         bodyHint.textContent = bodyLen < BODY_MIN ? `At least ${BODY_MIN} characters (${BODY_MIN - bodyLen} to go)` : "Looking good";
     };
+    // Which slide (photo, or the trailing "add more" slide) is currently in view — kept across
+    // re-renders so adding/removing/reordering a photo doesn't yank the swipe strip back to the start.
+    let activeSlide = 0;
     const renderThumbs = () => {
         const tiles = drafts
             .map((d, i) => `<div class="cf-thumb${i === 0 ? " is-cover" : ""}" data-key="${d.key}">
@@ -893,15 +918,58 @@ function openComposer(editing) {
         ${i > 0 && d.state === "done" ? `<button type="button" class="cf-thumb-cover-btn" data-d="cover">Make cover</button>` : ""}
       </div>`)
             .join("");
-        const add = drafts.length < MAX_PHOTOS ? `<button type="button" class="cf-add-photo" id="cfAddPhoto">${ICON.photo}Add photos</button>` : "";
+        const canAddMore = drafts.length < MAX_PHOTOS;
+        const add = canAddMore ? `<button type="button" class="cf-add-photo" id="cfAddPhoto">${ICON.photo}Add photos</button>` : "";
         thumbsEl.innerHTML = tiles + add;
+        const slideCount = drafts.length + (canAddMore ? 1 : 0);
+        thumbDotsEl.innerHTML =
+            drafts.length > 1
+                ? drafts
+                    .map((_, i) => `<button type="button" class="cf-thumb-dot${i === activeSlide ? " is-on" : ""}" data-dot="${i}" aria-label="Go to photo ${i + 1}"></button>`)
+                    .join("")
+                : "";
+        activeSlide = Math.min(activeSlide, Math.max(0, slideCount - 1));
+        thumbPrevEl.hidden = slideCount < 2;
+        thumbNextEl.hidden = slideCount < 2;
+        // Land back where the traveller was swiping, without an animated scroll (this runs on every
+        // structural change — adding a photo, removing one, reordering the cover — not just on open).
+        requestAnimationFrame(() => {
+            thumbsEl.scrollLeft = activeSlide * thumbsEl.clientWidth;
+            updateThumbNavState();
+        });
         validate();
     };
-    const uploadOne = (d) => {
+    const updateThumbNavState = () => {
+        const width = thumbsEl.clientWidth || 1;
+        activeSlide = Math.round(thumbsEl.scrollLeft / width);
+        thumbPrevEl.disabled = activeSlide <= 0;
+        thumbNextEl.disabled = activeSlide >= thumbsEl.children.length - 1;
+        thumbDotsEl.querySelectorAll("[data-dot]").forEach((dot, i) => dot.classList.toggle("is-on", i === activeSlide));
+    };
+    let scrollSettleTimer = 0;
+    thumbsEl.addEventListener("scroll", () => {
+        window.clearTimeout(scrollSettleTimer);
+        scrollSettleTimer = window.setTimeout(updateThumbNavState, 80);
+    });
+    thumbPrevEl.addEventListener("click", () => {
+        thumbsEl.scrollBy({ left: -thumbsEl.clientWidth, behavior: "smooth" });
+    });
+    thumbNextEl.addEventListener("click", () => {
+        thumbsEl.scrollBy({ left: thumbsEl.clientWidth, behavior: "smooth" });
+    });
+    thumbDotsEl.addEventListener("click", (event) => {
+        const dot = event.target.closest("[data-dot]");
+        if (!dot)
+            return;
+        thumbsEl.scrollTo({ left: Number(dot.dataset.dot) * thumbsEl.clientWidth, behavior: "smooth" });
+    });
+    const UPLOAD_TIMEOUT_MS = 45000;
+    const uploadOne = (d, attempt = 1) => {
         const xhr = new XMLHttpRequest();
         const form = new FormData();
         form.append("files", d.file, d.file.name);
         xhr.open("POST", `${API_BASE_URL}/blog/photos`);
+        xhr.timeout = UPLOAD_TIMEOUT_MS;
         const { token } = getSession();
         if (token)
             xhr.setRequestHeader("Authorization", `Bearer ${token}`);
@@ -917,25 +985,44 @@ function openComposer(editing) {
             try {
                 const data = JSON.parse(xhr.responseText);
                 if (xhr.status >= 200 && xhr.status < 300 && data.images?.[0]) {
+                    if (cancelled.has(d.key)) {
+                        // The traveller removed this photo while the (retried) upload was still in flight —
+                        // don't resurrect it, and don't leave the now-unwanted file sitting on the server.
+                        discardUploadedImage(data.images[0]);
+                        return;
+                    }
                     d.image = data.images[0];
                     d.state = "done";
+                    renderThumbs();
                 }
                 else {
                     d.state = "error";
                     errorEl.textContent = typeof data.detail === "string" ? data.detail : "Photo upload failed";
+                    renderThumbs();
                 }
             }
             catch {
                 d.state = "error";
                 errorEl.textContent = "Photo upload failed";
+                renderThumbs();
             }
-            renderThumbs();
         };
-        xhr.onerror = () => {
+        // Mobile data/Wi-Fi handoffs commonly cause one transient drop mid-upload — a single
+        // automatic retry clears most of those without the traveller having to notice or re-pick
+        // the photo. Only a second failure in a row is shown as an error.
+        const retryOrFail = (message) => {
+            if (attempt < 2 && !cancelled.has(d.key)) {
+                d.progress = 0;
+                renderThumbs();
+                window.setTimeout(() => uploadOne(d, attempt + 1), 900);
+                return;
+            }
             d.state = "error";
-            errorEl.textContent = "Network error while uploading the photo";
+            errorEl.textContent = message;
             renderThumbs();
         };
+        xhr.onerror = () => retryOrFail("Couldn't reach the server — check your connection and try again.");
+        xhr.ontimeout = () => retryOrFail("The upload timed out — your connection may be slow right now.");
         xhr.send(form);
     };
     const addFiles = (files) => {
@@ -945,12 +1032,12 @@ function openComposer(editing) {
                 errorEl.textContent = `You can add up to ${MAX_PHOTOS} photos.`;
                 break;
             }
-            if (!/^image\/(jpeg|png|webp)$/.test(file.type)) {
-                errorEl.textContent = `${file.name}: please choose a JPG, PNG or WEBP image.`;
+            if (!looksLikePhoto(file)) {
+                errorEl.textContent = `${file.name}: please choose a photo (JPG, PNG, WEBP or HEIC).`;
                 continue;
             }
             if (file.size > MAX_PHOTO_BYTES) {
-                errorEl.textContent = `${file.name} is larger than 8 MB.`;
+                errorEl.textContent = `${file.name} is larger than 20 MB.`;
                 continue;
             }
             keyCounter += 1;
@@ -983,6 +1070,7 @@ function openComposer(editing) {
             return;
         if (action.dataset.d === "remove") {
             const [removed] = drafts.splice(idx, 1);
+            cancelled.add(removed.key);
             if (removed.blobUrl.startsWith("blob:"))
                 URL.revokeObjectURL(removed.blobUrl);
             if (removed.state === "done" && removed.image)

@@ -57,6 +57,16 @@ def jpeg_bytes(size=(3000, 2000), exif_orientation=None):
   return buf.getvalue()
 
 
+def mpo_bytes(size=(3000, 2000)):
+  """An iPhone Portrait-mode photo: a JPEG with a second depth frame — Pillow reports this
+  as format MPO rather than JPEG, even though the Camera app made it like any other photo."""
+  main = Image.new("RGB", size, (180, 140, 90))
+  depth = Image.new("RGB", size, (80, 80, 80))
+  buf = io.BytesIO()
+  main.save(buf, format="MPO", save_all=True, append_images=[depth])
+  return buf.getvalue()
+
+
 def upload(client, email, data, name="p.jpg"):
   return client.post("/api/blog/photos", files=[("files", (name, data, "image/jpeg"))], headers=auth(email))
 
@@ -92,7 +102,29 @@ def test_rejects_non_images(client, payload, name):
 
 
 def test_rejects_oversize(client):
-  assert upload(client, "asha@example.com", b"\xff\xd8\xff" + b"0" * (8 * 1024 * 1024 + 10)).status_code == 400
+  assert upload(client, "asha@example.com", b"\xff\xd8\xff" + b"0" * (20 * 1024 * 1024 + 10)).status_code == 400
+
+
+def test_accepts_heic_from_iphone_camera_roll(client):
+  pillow_heif = pytest.importorskip("pillow_heif")
+  heif = pillow_heif.from_pillow(Image.new("RGB", (640, 480), (90, 140, 170)))
+  buf = io.BytesIO()
+  heif.save(buf, format="HEIF")
+  res = client.post(
+    "/api/blog/photos",
+    files=[("files", ("IMG_0001.heic", buf.getvalue(), "image/heic"))],
+    headers=auth("asha@example.com"),
+  )
+  assert res.status_code == 200, res.text
+  img = res.json()["images"][0]
+  assert img["full"].endswith("_full.webp")  # always converted to WebP regardless of source format
+
+
+def test_accepts_iphone_portrait_mode_mpo_photo(client):
+  res = upload(client, "asha@example.com", mpo_bytes((800, 600)), name="IMG_1234.JPG")
+  assert res.status_code == 200, res.text
+  img = res.json()["images"][0]
+  assert img["full"].endswith("_full.webp")
 
 
 def test_upload_requires_login(client):

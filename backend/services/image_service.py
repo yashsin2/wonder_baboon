@@ -12,12 +12,33 @@ from config import UPLOAD_DIR
 
 logger = logging.getLogger(__name__)
 
+# iPhones save camera-roll photos as HEIC/HEIF by default — without this, every such photo
+# a traveller picks straight from their camera roll fails to upload. Pillow can't read HEIC on
+# its own, so pillow-heif registers a decoder for it as just another Pillow-openable format.
+try:
+  import pillow_heif
+
+  pillow_heif.register_heif_opener()
+  _HEIF_AVAILABLE = True
+except Exception:  # pragma: no cover - only hit if the optional dependency is missing
+  logger.warning("pillow-heif not available; HEIC/HEIF photo uploads will be rejected")
+  _HEIF_AVAILABLE = False
+
 BLOG_DIR = "blog"
-MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+# This only bounds the *upload* (bandwidth/time and how much raw bytes we hold in memory
+# before processing) — every photo is re-encoded to a small WebP regardless of how big the
+# original was, so raising this doesn't change what ends up on disk. The real guard against a
+# memory-exhaustion ("decompression bomb") attack is MAX_PIXELS below, which caps the decoded
+# image regardless of file size.
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_PIXELS = 50_000_000
 FULL_EDGE = 1600
 THUMB_EDGE = 600
-ALLOWED_FORMATS = {"JPEG", "PNG", "WEBP"}
+# MPO is what Pillow calls an iPhone Portrait-mode (or some dual-camera Android) photo: a plain
+# JPEG with a second "depth" frame tacked on for the background-blur effect. It is not a separate
+# format a traveller chose — it is what the Camera app produces — and Pillow decodes its first
+# frame exactly like an ordinary JPEG, so treat it as one rather than rejecting a real photo.
+ALLOWED_FORMATS = {"JPEG", "MPO", "PNG", "WEBP"} | ({"HEIF"} if _HEIF_AVAILABLE else set())
 
 Image.MAX_IMAGE_PIXELS = MAX_PIXELS
 
@@ -37,11 +58,11 @@ def _encode(img: Image.Image, edge: int, quality: int) -> bytes:
 def process_and_store(data: bytes, public_origin: str) -> Dict[str, Any]:
   """Validate by decoding, strip metadata, resize and store as WebP. Returns the image record."""
   if len(data) > MAX_UPLOAD_BYTES:
-    raise ImageRejected("image must be 8MB or smaller")
+    raise ImageRejected("image must be 20MB or smaller")
   try:
     probe = Image.open(io.BytesIO(data))
     if probe.format not in ALLOWED_FORMATS:
-      raise ImageRejected("upload a JPG, PNG or WEBP image")
+      raise ImageRejected("upload a JPG, PNG, WEBP or HEIC photo" if _HEIF_AVAILABLE else "upload a JPG, PNG or WEBP image")
     probe.verify()
     img = Image.open(io.BytesIO(data))
     img.load()
