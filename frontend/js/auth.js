@@ -326,7 +326,7 @@ document.getElementById("signupForm").addEventListener("submit", async (event) =
         saveSession(data.token, data.user);
         showStatus("Account created! Redirecting to your dashboard...", true);
         setTimeout(() => {
-            window.location.href = postLoginTarget(ROUTES.upcoming);
+            window.location.href = postLoginTarget(ROUTES.home);
         }, 900);
     }
     catch (error) {
@@ -355,7 +355,7 @@ document.getElementById("loginForm").addEventListener("submit", async (event) =>
         }
         showStatus("Logged in! Opening your dashboard...", true);
         setTimeout(() => {
-            window.location.href = postLoginTarget(ROUTES.upcoming);
+            window.location.href = postLoginTarget(ROUTES.home);
         }, 700);
     }
     catch (error) {
@@ -367,5 +367,5 @@ const token = localStorage.getItem("wb_token");
 const userRaw = localStorage.getItem("wb_user");
 if (token && userRaw) {
     const user = JSON.parse(userRaw);
-    window.location.href = user.role === "admin" ? ROUTES.admin : postLoginTarget(ROUTES.upcoming);
+    window.location.href = user.role === "admin" ? ROUTES.admin : postLoginTarget(ROUTES.home);
 }

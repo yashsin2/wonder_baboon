@@ -338,7 +338,7 @@ signupVerifyOtpBtn.addEventListener("click", async () => {
     saveSession(data.token, data.user);
     showStatus("Account created! Redirecting to your dashboard...", true);
     setTimeout(() => {
-      window.location.href = postLoginTarget(ROUTES.upcoming);
+      window.location.href = postLoginTarget(ROUTES.home);
     }, 900);
   } catch (error) {
     showStatus(error instanceof Error ? error.message : "Signup failed");
@@ -369,7 +369,7 @@ signupVerifyOtpBtn.addEventListener("click", async () => {
 
     showStatus("Logged in! Opening your dashboard...", true);
     setTimeout(() => {
-      window.location.href = postLoginTarget(ROUTES.upcoming);
+      window.location.href = postLoginTarget(ROUTES.home);
     }, 700);
   } catch (error) {
     showStatus(error instanceof Error ? error.message : "Login failed");
@@ -381,5 +381,5 @@ const token = localStorage.getItem("wb_token");
 const userRaw = localStorage.getItem("wb_user");
 if (token && userRaw) {
   const user = JSON.parse(userRaw) as { role?: string };
-  window.location.href = user.role === "admin" ? ROUTES.admin : postLoginTarget(ROUTES.upcoming);
+  window.location.href = user.role === "admin" ? ROUTES.admin : postLoginTarget(ROUTES.home);
 }
