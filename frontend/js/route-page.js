@@ -1,5 +1,5 @@
 import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles } from "./booking-form.js?v=20261125171901";
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, logger, parseError, saveSession, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js?v=20261125171901";
+import { API_BASE_URL, clearSession, getSession, handleExpiredSession, isUpcomingTravelDate, logger, parseError, saveSession, showMessagePopup, showSuccessModal, updateHeaderAuth, } from "./config.js?v=20261125171901";
 import { getItineraryHtml } from "./trip-itineraries.js?v=20261125171901";
 const page = (document.body.dataset.page || "");
 function authHeaders() {
@@ -7,12 +7,16 @@ function authHeaders() {
     return token ? { Authorization: `Bearer ${token}` } : {};
 }
 async function apiFetch(path, init = {}) {
+    const { token } = getSession();
     const headers = {
         "Content-Type": "application/json",
         ...authHeaders(),
         ...init.headers,
     };
-    return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    if (token)
+        handleExpiredSession(response);
+    return response;
 }
 function loginPrompt(message) {
     return `

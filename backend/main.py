@@ -16,8 +16,10 @@ from pydantic import ValidationError
 
 from auth_utils import (
   create_pending_booking_token,
+  create_signup_verification_token,
   create_token,
   decode_pending_booking_token,
+  decode_signup_verification_token,
   decode_token,
   hash_password,
   require_admin,
@@ -51,6 +53,7 @@ from models import (
   AdminTripCreateRequest,
   AdminTripUpdateRequest,
   EmailOtpRequest,
+  ForgotPasswordOtpRequest,
   GuestBookingRequest,
   MobileOtpRequest,
   OtpVerifyRequest,
@@ -58,6 +61,9 @@ from models import (
   ProfileNameUpdateRequest,
   RazorpayCreateOrderRequest,
   RazorpayVerifyRequest,
+  ResetPasswordRequest,
+  SignupOtpRequest,
+  SignupOtpVerifyRequest,
   TravelerContact,
   TravelGalleryPlaceRequest,
   TravelGalleryStateRequest,
@@ -628,9 +634,39 @@ def health():
   return {"ok": True}
 
 
+@app.post("/api/auth/signup/otp")
+def request_signup_otp(payload: SignupOtpRequest):
+  email = payload.email.lower().strip()
+  if mongo_service.find_user_by_email(email):
+    raise HTTPException(status_code=409, detail="user already exists")
+  ok, message = otp_service.request(email, "signup", email)
+  if not ok:
+    raise HTTPException(status_code=429 if "wait" in message else 500, detail=message)
+  logger.info("signup OTP requested email=%s", email)
+  return {"message": message}
+
+
+@app.post("/api/auth/signup/otp/verify")
+def verify_signup_otp(payload: SignupOtpVerifyRequest):
+  email = payload.email.lower().strip()
+  if mongo_service.find_user_by_email(email):
+    raise HTTPException(status_code=409, detail="user already exists")
+  verified_email = otp_service.verify(email, "signup", payload.otp_code)
+  if not verified_email or verified_email.lower() != email:
+    raise HTTPException(status_code=400, detail="invalid or expired verification code")
+  # The OTP is single-use and just got consumed above; hand back a signed, short-lived
+  # token so the user can finish signup (mobile/password) without re-verifying.
+  token = create_signup_verification_token(email)
+  logger.info("signup OTP verified email=%s", email)
+  return {"verification_token": token, "message": "email verified"}
+
+
 @app.post("/api/auth/signup")
 def signup(payload: UserSignupRequest):
   email = payload.email.lower().strip()
+  verified_email = decode_signup_verification_token(payload.verification_token)
+  if not verified_email or verified_email.lower() != email:
+    raise HTTPException(status_code=400, detail="email verification expired — please verify your email again")
   if mongo_service.find_user_by_mobile(payload.mobile):
     raise HTTPException(status_code=409, detail="mobile already registered")
   user_doc = {
@@ -689,6 +725,32 @@ def login(payload: UnifiedLoginRequest, request: Request):
   token = create_token({"role": "admin", "username": username})
   logger.info("admin login success username=%s", username)
   return {"token": token, "user": {"role": "admin", "username": username}}
+
+
+@app.post("/api/auth/forgot-password/otp")
+def request_forgot_password_otp(payload: ForgotPasswordOtpRequest):
+  email = payload.email.lower().strip()
+  if not mongo_service.find_user_by_email(email):
+    # Don't reveal whether the account exists.
+    logger.info("forgot-password OTP requested for unknown email=%s", email)
+    return {"message": "if an account exists for this email, a verification code has been sent"}
+  ok, message = otp_service.request(email, "reset", email)
+  if not ok:
+    raise HTTPException(status_code=429 if "wait" in message else 500, detail=message)
+  logger.info("forgot-password OTP requested email=%s", email)
+  return {"message": "if an account exists for this email, a verification code has been sent"}
+
+
+@app.post("/api/auth/forgot-password/reset")
+def reset_password(payload: ResetPasswordRequest):
+  email = payload.email.lower().strip()
+  verified_email = otp_service.verify(email, "reset", payload.otp_code)
+  if not verified_email or verified_email.lower() != email:
+    raise HTTPException(status_code=400, detail="invalid or expired verification code")
+  if not mongo_service.update_user_password(email, hash_password(payload.new_password)):
+    raise HTTPException(status_code=404, detail="user not found")
+  logger.info("password reset success email=%s", email)
+  return {"message": "password reset; please log in with your new password"}
 
 
 def _require_user(authorization: Optional[str]) -> dict:

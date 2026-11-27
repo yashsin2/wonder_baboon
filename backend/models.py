@@ -15,6 +15,7 @@ class UserSignupRequest(BaseModel):
   email: EmailStr
   mobile: str = Field(min_length=1, max_length=20)
   password: str = Field(min_length=8, max_length=72)
+  verification_token: str = Field(min_length=20, max_length=2000)
 
   @field_validator("email", mode="before")
   @classmethod
@@ -205,6 +206,23 @@ class ProfileNameUpdateRequest(BaseModel):
     return cleaned
 
 
+class SignupOtpRequest(BaseModel):
+  email: EmailStr
+
+
+class SignupOtpVerifyRequest(BaseModel):
+  email: EmailStr
+  otp_code: str = Field(min_length=6, max_length=6)
+
+  @field_validator("otp_code")
+  @classmethod
+  def validate_otp_code(cls, value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned.isdigit():
+      raise ValueError("verification code must be 6 digits")
+    return cleaned
+
+
 class EmailOtpRequest(BaseModel):
   new_email: EmailStr
 
@@ -230,6 +248,31 @@ class OtpVerifyRequest(BaseModel):
     if not cleaned.isdigit():
       raise ValueError("code must be digits")
     return cleaned
+
+
+class ForgotPasswordOtpRequest(BaseModel):
+  email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+  email: EmailStr
+  otp_code: str = Field(min_length=6, max_length=6)
+  new_password: str = Field(min_length=8, max_length=72)
+
+  @field_validator("otp_code")
+  @classmethod
+  def validate_otp_code(cls, value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned.isdigit():
+      raise ValueError("verification code must be 6 digits")
+    return cleaned
+
+  @field_validator("new_password")
+  @classmethod
+  def validate_new_password(cls, value: str) -> str:
+    if not (re.search(r"[A-Z]", value) and re.search(r"[a-z]", value) and re.search(r"\d", value)):
+      raise ValueError("password must include uppercase lowercase number")
+    return value
 
 
 class AdminConfirmPaymentFields(BaseModel):

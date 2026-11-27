@@ -1,4 +1,4 @@
-import { API_BASE_URL, Booking, clearSession, getSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js";
+import { API_BASE_URL, Booking, clearSession, getSession, handleExpiredSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js";
 
 const { token, user } = getSession();
 
@@ -29,6 +29,7 @@ function setAvatarInitials(name: string): void {
 async function loadUserProfile(): Promise<void> {
   try {
     const res = await fetch(`${API_BASE_URL}/user/profile`, { headers: authHeaders });
+    handleExpiredSession(res);
     const data = await res.json();
     if (!res.ok) throw new Error(await parseError(res, data));
 
@@ -45,6 +46,7 @@ async function loadUserProfile(): Promise<void> {
 async function loadUserBookings(): Promise<void> {
   try {
     const res = await fetch(`${API_BASE_URL}/user/bookings`, { headers: authHeaders });
+    handleExpiredSession(res);
     const data = await res.json();
     if (!res.ok) throw new Error(await parseError(res, data));
 

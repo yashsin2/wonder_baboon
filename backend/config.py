@@ -97,6 +97,10 @@ else:
 OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "600"))
 OTP_RATE_LIMIT_SECONDS = int(os.getenv("OTP_RATE_LIMIT_SECONDS", "60"))
 
+# Once an email passes OTP verification during signup, this is how long the user has to
+# finish filling the rest of the form (mobile/password) without having to re-verify.
+SIGNUP_VERIFICATION_EXPIRE_SECONDS = int(os.getenv("SIGNUP_VERIFICATION_EXPIRE_SECONDS", "1800"))
+
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 RAZORPAY_KEY_ID = (os.getenv("RAZORPAY_KEY_ID") or "").strip()

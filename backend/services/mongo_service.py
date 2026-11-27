@@ -240,6 +240,11 @@ class MongoService:
       logger.info("mobile change blocked: %s already exists", mobile)
       raise ValueError("mobile already in use")
 
+  def update_user_password(self, email: str, password_hash: str) -> bool:
+    result = self.user_collection.update_one({"email": email}, {"$set": {"password_hash": password_hash}})
+    logger.info("update password email=%s matched=%s", email, result.matched_count)
+    return result.matched_count > 0
+
   def save_otp(self, doc: dict) -> None:
     self.otp_collection.insert_one(doc)
 

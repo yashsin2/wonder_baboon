@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError } from "./config.js";
+import { API_BASE_URL, handleExpiredSession, parseError } from "./config.js";
 import { inclusiveDays, prettyRange, wireDateRange } from "./date-range.js";
 import {
   districtFromTarget,
@@ -149,6 +149,7 @@ async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> 
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  handleExpiredSession(res);
   if (!res.ok) throw new Error(await parseError(res));
   return (await res.json()) as T;
 }

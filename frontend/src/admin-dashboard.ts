@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, parseError, ROUTES, Trip, TripStyleSlug } from "./config.js";
+import { API_BASE_URL, getSession, handleExpiredSession, parseError, ROUTES, Trip, TripStyleSlug } from "./config.js";
 import { collectExtraTravelers, extraTravelerBlocksHtml, wireExtraTravelerMobiles, type TravelerContact } from "./booking-form.js";
 import { initAdminGallery, loadAdminGalleryTab } from "./admin-gallery.js";
 import { adminAlert, animateCounts, initAdminUi, showToast } from "./admin-ui.js";
@@ -188,6 +188,7 @@ async function uploadTripItineraryPdf(tripId: string, file: File): Promise<void>
     headers: { Authorization: `Bearer ${token}` },
     body: fd,
   });
+  handleExpiredSession(response);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
@@ -196,6 +197,7 @@ async function clearTripItineraryPdf(tripId: string): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
+  handleExpiredSession(response);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
@@ -204,6 +206,7 @@ async function deleteTripById(tripId: string): Promise<void> {
     method: "DELETE",
     headers: authHeaders,
   });
+  handleExpiredSession(response);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
@@ -212,6 +215,7 @@ async function deleteBookingById(bookingId: string): Promise<void> {
     method: "DELETE",
     headers: authHeaders,
   });
+  handleExpiredSession(response);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
@@ -221,6 +225,7 @@ async function addBookingMembers(bookingId: string, contacts: TravelerContact[])
     headers: authHeaders,
     body: JSON.stringify({ additional_contacts: contacts }),
   });
+  handleExpiredSession(response);
   if (!response.ok) throw new Error(await parseError(response));
 }
 
@@ -474,6 +479,7 @@ async function fetchJson(url: string, options: RequestInit = {}): Promise<Record
       ...(options.headers as Record<string, string> | undefined),
     },
   });
+  handleExpiredSession(response);
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
@@ -853,6 +859,7 @@ initAdminTripForm();
       headers: authHeaders,
       body: JSON.stringify(payload),
     });
+    handleExpiredSession(response);
 
     const data = (await response.json().catch(() => ({}))) as { trip_id?: string; detail?: unknown };
     if (!response.ok) throw new Error(await parseError(response, data));

@@ -16,6 +16,10 @@ WINDOW_SEC = float(os.getenv("AUTH_RATE_LIMIT_WINDOW_SECONDS", "120"))
 _LIMITS: dict[str, tuple[int, float]] = {
   "/api/auth/login": (MAX_REQ, WINDOW_SEC),
   "/api/auth/signup": (MAX_REQ, WINDOW_SEC),
+  "/api/auth/signup/otp": (8, 600),
+  "/api/auth/signup/otp/verify": (15, 600),
+  "/api/auth/forgot-password/otp": (8, 600),
+  "/api/auth/forgot-password/reset": (15, 600),
   "/api/bookings/guest": (12, 600),
   "/api/planned-trips": (12, 600),
   "/api/payments/razorpay/create-order": (30, 600),

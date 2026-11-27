@@ -8,9 +8,16 @@ from typing import Any, Dict, Optional
 from fastapi import Header, HTTPException
 from jose import JWTError, jwt
 
-from config import JWT_ALGORITHM, JWT_EXPIRE_HOURS, JWT_SECRET, PENDING_BOOKING_EXPIRE_HOURS
+from config import (
+  JWT_ALGORITHM,
+  JWT_EXPIRE_HOURS,
+  JWT_SECRET,
+  PENDING_BOOKING_EXPIRE_HOURS,
+  SIGNUP_VERIFICATION_EXPIRE_SECONDS,
+)
 
 PENDING_BOOKING_TOKEN_TYPE = "pending_booking"
+SIGNUP_VERIFICATION_TOKEN_TYPE = "signup_email_verified"
 
 
 def normalize_indian_mobile(value: str) -> str:
@@ -74,6 +81,30 @@ def require_admin(authorization: Optional[str] = Header(default=None)) -> dict:
   if not payload or payload.get("role") != "admin":
     raise HTTPException(status_code=403, detail="Admin access required")
   return payload
+
+
+def create_signup_verification_token(email: str) -> str:
+  """Issued once an email passes OTP verification, so the OTP itself (single-use) can be
+  consumed immediately while the user still has a window to finish the signup form —
+  without the OTP's own short TTL forcing them to re-verify if they take their time."""
+  exp = datetime.now(timezone.utc) + timedelta(seconds=SIGNUP_VERIFICATION_EXPIRE_SECONDS)
+  payload = {"typ": SIGNUP_VERIFICATION_TOKEN_TYPE, "email": email, "exp": exp}
+  return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_signup_verification_token(token: str) -> Optional[str]:
+  """Returns the verified email if the token is valid and unexpired, else None."""
+  cleaned = (token or "").strip()
+  if not cleaned:
+    return None
+  try:
+    payload = jwt.decode(cleaned, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+  except JWTError:
+    return None
+  if payload.get("typ") != SIGNUP_VERIFICATION_TOKEN_TYPE:
+    return None
+  email = payload.get("email")
+  return email if isinstance(email, str) and email else None
 
 
 def _serialize_booking_doc_for_token(doc: Dict[str, Any]) -> Dict[str, Any]:

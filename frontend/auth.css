@@ -182,6 +182,58 @@ button[type="submit"]:active {
   transform: translateY(1px);
 }
 
+.otp-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.otp-row input {
+  flex: 1;
+}
+
+.otp-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(47, 38, 27, 0.3);
+  background: rgba(255, 255, 255, 0.82);
+  color: #2f261b;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 0 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.otp-btn:hover:not(:disabled) {
+  background: #ccff00;
+}
+
+.otp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.otp-field {
+  animation: fadeIn 0.25s ease;
+}
+
+.verified-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #3f6212;
+  animation: fadeIn 0.25s ease;
+}
+
+.verified-note a {
+  color: #6b5b46;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .status {
   min-height: 22px;
   margin-top: 14px;

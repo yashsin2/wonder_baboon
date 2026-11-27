@@ -20,12 +20,12 @@ class OtpService:
   def request(self, user_email: str, kind: str, new_value: str) -> Tuple[bool, str]:
     """Generate an OTP, persist it, and email it.
 
-    kind: "email" | "mobile"
-    For kind=email -> OTP is sent to new_value (the new email)
-    For kind=mobile -> OTP is sent to user_email (the existing account email)
+    kind: "email" | "mobile" | "signup" | "reset"
+    For kind=email/signup -> OTP is sent to new_value (the new/signup email)
+    For kind=mobile/reset -> OTP is sent to user_email (the existing account email)
     Returns (ok, message). Never returns the OTP.
     """
-    if kind not in {"email", "mobile"}:
+    if kind not in {"email", "mobile", "signup", "reset"}:
       return False, "invalid kind"
 
     now = datetime.now(timezone.utc)
@@ -41,7 +41,7 @@ class OtpService:
     salt = secrets.token_hex(8)
     expires_at = now + timedelta(seconds=OTP_TTL_SECONDS)
 
-    target = new_value if kind == "email" else user_email
+    target = new_value if kind in ("email", "signup") else user_email
     subject = "Your Wonder Baboon verification code"
     body = (
       f"Hi,\n\nYour verification code is: {code}\n\n"

@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js?v=20261125171901";
+import { API_BASE_URL, getSession, handleExpiredSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js?v=20261125171901";
 import { bookingAdvanceNoticeText, completeBookingWithOptionalRazorpay, fetchRazorpayConfig, handlePaymentFlowError, } from "./razorpay-checkout.js?v=20261125171901";
 export function guestBookingFieldsHtml() {
     return `
@@ -238,6 +238,7 @@ export async function submitBookingAndPay(modal, trip, paymentKind, opts) {
                     additional_contacts: extras,
                 }),
             });
+            handleExpiredSession(res);
             if (!res.ok)
                 throw new Error(await parseError(res));
             saved = await res.json();

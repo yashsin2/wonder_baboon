@@ -57,6 +57,27 @@
           <input id="loginPassword" type="password" minlength="8" autocomplete="current-password" required>
           <button type="submit">Login</button>
         </form>
+        <a id="forgotPasswordLink" class="back-link" href="#">Forgot password?</a>
+      </section>
+
+      <section id="forgotPanel" class="auth-panel">
+        <h2>Reset password</h2>
+        <p class="auth-hint">Enter your account email, verify the code we send, then set a new password.</p>
+        <form id="forgotForm">
+          <label>Email</label>
+          <div class="otp-row">
+            <input id="forgotEmail" type="email" autocomplete="email" required placeholder="you@example.com">
+            <button type="button" id="forgotSendOtpBtn" class="otp-btn">Send code</button>
+          </div>
+          <div id="forgotOtpField" class="otp-field" hidden>
+            <label>Verification code</label>
+            <input id="forgotOtpCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code">
+            <label>New password</label>
+            <input id="forgotNewPassword" type="password" minlength="8" placeholder="New password">
+            <button type="submit">Reset Password</button>
+          </div>
+        </form>
+        <a id="backToLoginLink" class="back-link" href="#">← Back to login</a>
       </section>
 
       <section id="signupPanel" class="auth-panel">
@@ -66,12 +87,25 @@
           <label>Full Name</label>
           <input id="signupName" type="text" required>
           <label>Email (required)</label>
-          <input id="signupEmail" type="email" autocomplete="email" required placeholder="you@example.com">
-          <label>Mobile</label>
-          <input id="signupMobile" type="tel" required placeholder="10-digit Indian number">
-          <label>Password</label>
-          <input id="signupPassword" type="password" minlength="8" required>
-          <button type="submit">Create Account</button>
+          <div class="otp-row">
+            <input id="signupEmail" type="email" autocomplete="email" required placeholder="you@example.com">
+            <button type="button" id="signupSendOtpBtn" class="otp-btn">Send code</button>
+          </div>
+          <div id="signupOtpField" class="otp-field" hidden>
+            <label>Verification code</label>
+            <div class="otp-row">
+              <input id="signupOtpCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code">
+              <button type="button" id="signupVerifyOtpBtn" class="otp-btn">Verify</button>
+            </div>
+          </div>
+          <p id="signupVerifiedNote" class="verified-note" hidden>&#10003; Email verified. <a href="#" id="signupChangeEmailLink">Not you?</a></p>
+          <div id="signupPostVerifyFields" hidden>
+            <label>Mobile</label>
+            <input id="signupMobile" type="tel" required placeholder="10-digit Indian number">
+            <label>Password</label>
+            <input id="signupPassword" type="password" minlength="8" required>
+            <button type="submit">Create Account</button>
+          </div>
         </form>
       </section>
 

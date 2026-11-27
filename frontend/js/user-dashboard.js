@@ -1,4 +1,4 @@
-import { API_BASE_URL, clearSession, getSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js?v=20261125171901";
+import { API_BASE_URL, clearSession, getSession, handleExpiredSession, isUpcomingTravelDate, parseError, ROUTES } from "./config.js?v=20261125171901";
 const { token, user } = getSession();
 if (!token || !user || user.role !== "user") {
     window.location.href = ROUTES.auth;
@@ -23,6 +23,7 @@ function setAvatarInitials(name) {
 async function loadUserProfile() {
     try {
         const res = await fetch(`${API_BASE_URL}/user/profile`, { headers: authHeaders });
+        handleExpiredSession(res);
         const data = await res.json();
         if (!res.ok)
             throw new Error(await parseError(res, data));
@@ -39,6 +40,7 @@ async function loadUserProfile() {
 async function loadUserBookings() {
     try {
         const res = await fetch(`${API_BASE_URL}/user/bookings`, { headers: authHeaders });
+        handleExpiredSession(res);
         const data = await res.json();
         if (!res.ok)
             throw new Error(await parseError(res, data));

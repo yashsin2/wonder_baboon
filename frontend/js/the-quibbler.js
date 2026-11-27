@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js?v=20261125171901";
+import { API_BASE_URL, getSession, handleExpiredSession, mountWbModal, parseError, redirectToLogin, showMessagePopup } from "./config.js?v=20261125171901";
 const MOODS = ["Emotional", "Funny", "Adventure", "Food", "Soul-searching", "Budget tips"];
 const MAX_PHOTOS = 6;
 const MAX_PHOTO_BYTES = 20 * 1024 * 1024;
@@ -77,6 +77,8 @@ async function api(path, init = {}) {
     if (token)
         headers.Authorization = `Bearer ${token}`;
     const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    if (token)
+        handleExpiredSession(response);
     let data = null;
     try {
         data = await response.json();
@@ -993,6 +995,10 @@ function openComposer(editing) {
                 bar.style.width = `${d.progress}%`;
         };
         xhr.onload = () => {
+            if (xhr.status === 401) {
+                redirectToLogin();
+                return;
+            }
             try {
                 const data = JSON.parse(xhr.responseText);
                 if (xhr.status >= 200 && xhr.status < 300 && data.images?.[0]) {

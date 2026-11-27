@@ -2,6 +2,7 @@ import {
   API_BASE_URL,
   ROUTES,
   getSession,
+  handleExpiredSession,
   saveSession,
   parseError,
   showMessagePopup,
@@ -74,6 +75,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  if (token) handleExpiredSession(response);
   let data: unknown = null;
   try {
     data = await response.json();

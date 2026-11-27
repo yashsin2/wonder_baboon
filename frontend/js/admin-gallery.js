@@ -1,4 +1,4 @@
-import { API_BASE_URL, parseError } from "./config.js?v=20261125171901";
+import { API_BASE_URL, handleExpiredSession, parseError } from "./config.js?v=20261125171901";
 import { inclusiveDays, prettyRange, wireDateRange } from "./date-range.js?v=20261125171901";
 import { districtFromTarget, districtName, eventToMapXY, getStateMapMeta, loadStateMapManifest, markDistricts, mountStateMap, projectLatLng, unprojectXY, } from "./state-maps.js?v=20261125171901";
 let states = [];
@@ -53,6 +53,7 @@ async function api(path, method = "GET", body) {
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+    handleExpiredSession(res);
     if (!res.ok)
         throw new Error(await parseError(res));
     return (await res.json());

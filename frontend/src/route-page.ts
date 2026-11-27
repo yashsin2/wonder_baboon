@@ -4,6 +4,7 @@ import {
   Booking,
   clearSession,
   getSession,
+  handleExpiredSession,
   isUpcomingTravelDate,
   logger,
   parseError,
@@ -34,12 +35,15 @@ function authHeaders(): Record<string, string> {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const { token } = getSession();
   const headers = {
     "Content-Type": "application/json",
     ...authHeaders(),
     ...(init.headers as Record<string, string> | undefined),
   };
-  return fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  if (token) handleExpiredSession(response);
+  return response;
 }
 
 function loginPrompt(message: string): string {

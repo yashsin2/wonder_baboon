@@ -69,6 +69,19 @@ export function clearSession() {
     localStorage.removeItem("wb_token");
     localStorage.removeItem("wb_user");
 }
+/** Token present but server rejected it (expired/invalid) — drop the stale session and send the
+ * visitor back to login instead of leaving a logged-in-looking header with every action failing. */
+export function redirectToLogin() {
+    clearSession();
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = next && next !== "%2F" ? `${ROUTES.auth}?next=${next}` : ROUTES.auth;
+}
+/** Call right after an authenticated fetch; no-ops unless the response is 401. */
+export function handleExpiredSession(response) {
+    if (response.status === 401) {
+        redirectToLogin();
+    }
+}
 export function normalizeImageUrl(url) {
     if (!url)
         return "./assets/lake.jpg";

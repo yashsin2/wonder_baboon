@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js";
+import { API_BASE_URL, getSession, handleExpiredSession, logger, parseError, showMessagePopup, showSuccessModal } from "./config.js";
 import type { Trip } from "./config.js";
 import {
   BookingSavedPayload,
@@ -269,6 +269,7 @@ export async function submitBookingAndPay(
           additional_contacts: extras,
         }),
       });
+      handleExpiredSession(res);
       if (!res.ok) throw new Error(await parseError(res));
       saved = await res.json();
       contact = { name: user?.name, email: user?.email, mobile: user?.mobile };

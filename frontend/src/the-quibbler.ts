@@ -1,4 +1,4 @@
-import { API_BASE_URL, getSession, mountWbModal, parseError, showMessagePopup } from "./config.js";
+import { API_BASE_URL, getSession, handleExpiredSession, mountWbModal, parseError, redirectToLogin, showMessagePopup } from "./config.js";
 
 interface BlogImage {
   full: string;
@@ -130,6 +130,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (init.body && !(init.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+  if (token) handleExpiredSession(response);
   let data: unknown = null;
   try {
     data = await response.json();
@@ -1075,6 +1076,10 @@ function openComposer(editing?: Post): void {
       if (bar) bar.style.width = `${d.progress}%`;
     };
     xhr.onload = () => {
+      if (xhr.status === 401) {
+        redirectToLogin();
+        return;
+      }
       try {
         const data = JSON.parse(xhr.responseText) as { images?: BlogImage[]; detail?: unknown };
         if (xhr.status >= 200 && xhr.status < 300 && data.images?.[0]) {

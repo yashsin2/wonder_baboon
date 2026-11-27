@@ -1,4 +1,4 @@
-import { API_BASE_URL, ROUTES, getSession, saveSession, parseError, showMessagePopup, mountWbModal, } from "./config.js?v=20261125171901";
+import { API_BASE_URL, ROUTES, getSession, handleExpiredSession, saveSession, parseError, showMessagePopup, mountWbModal, } from "./config.js?v=20261125171901";
 const main = document.getElementById("profileMain");
 function esc(value) {
     return String(value ?? "")
@@ -34,6 +34,8 @@ async function api(path, init = {}) {
     if (token)
         headers.Authorization = `Bearer ${token}`;
     const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    if (token)
+        handleExpiredSession(response);
     let data = null;
     try {
         data = await response.json();
